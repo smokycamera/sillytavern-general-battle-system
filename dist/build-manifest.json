@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-21T10:17:07.130Z",
-  "sourceFingerprint": "9fca5b7422fb368d255abc825af2456b398077c8249d28c04852b4eb0e27a464",
+  "builtAt": "2026-11-21T10:36:29.291Z",
+  "sourceFingerprint": "e4a55c174179776effc0e38794ee42042a3709d0777ed9d4db89f88a5f0c0e68",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -587,8 +587,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 106026,
-      "sha256": "4b007b28ffc8714dd1fe330c1a79faecc3a1e8de7bced58717044c90a46e0a01"
+      "bytes": 106614,
+      "sha256": "36f9d42688f2df4520bfd59f7e4a37a54577c4b6682f5d20d39d6acc20d2ec89"
     },
     {
       "path": "licenses/Vite-LICENSE.md",

@@ -15,6 +15,22 @@ function mount(saved: DisplayPreferences = {}) {
 beforeEach(() => { size(390, 844); vi.stubGlobal('visualViewport', null); });
 afterEach(() => { panels.splice(0).forEach(panel => panel.dispose()); document.body.replaceChildren(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+it('localizes the no-chat error and its recovery actions before the iframe loads', () => {
+  const { panel, root } = mount({ language: 'en' });
+  const reload = vi.fn(), exportRaw = vi.fn();
+  const status = '无法确认当前是哪个角色聊天，暂时不能读取战阵存档';
+  const actions = [{ label: '重新读取存档', run: reload }, { label: '导出原始数据', run: exportRaw }];
+  panel.showStatus(status, actions, true); panel.open();
+  expect(root.querySelector('iframe')).toBeNull();
+  expect(root.querySelector('.tb-status p')?.textContent).toBe('Tavern Battle could not identify the current character chat. Open a character chat and reload the save.');
+  const buttons = [...root.querySelectorAll<HTMLButtonElement>('.tb-actions button')];
+  expect(buttons.map(button => button.textContent)).toEqual(['Reload Save', 'Export Raw Data']);
+  buttons[0]!.click(); buttons[1]!.click();
+  expect(reload).toHaveBeenCalledOnce(); expect(exportRaw).toHaveBeenCalledOnce();
+  panel.setLanguage('zh-CN'); panel.showStatus(status, actions, true);
+  expect(root.querySelector('.tb-status p')?.textContent).toBe(status);
+});
+
 it('places a first-run entry using explicit screen coordinates without saving a default preference', () => {
   const { entry, display } = mount();
   expect(entry.style.left).toBe('328px'); expect(entry.style.top).toBe('712px');
