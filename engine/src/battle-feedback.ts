@@ -27,6 +27,10 @@ export class BattleFeedback {
   constructor(round: number, units: FeedbackUnit[], restored?: unknown) {
     this.state = validFeedback(restored, round) ? structuredClone(restored) : { version: 2, seen: units, current: { round, changes: [] } };
   }
+  transferMembers(id: string, delta: number): void {
+    const seen = this.state.seen.find(u => u.id === id);
+    if (seen) seen.hp = Math.max(0,seen.hp + delta);
+  }
   /** 只在执行器记录事件或完成边界结算时调用；渲染永不调用采样。 */
   capture(round: number, units: FeedbackUnit[], objective?: ObjectiveFeedback): void {
     if (round !== this.state.current.round) {

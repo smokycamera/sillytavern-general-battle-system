@@ -7,6 +7,23 @@ import type { NarrativeSave } from '../../panel/src/narrative-state.js';
 import { envelopeFrom, matches, payloadHash } from './save-envelope.js';
 import type { ReplySaveWindow } from '../../host/src/reply-save.js';
 import { compactSaveHistory } from '../../panel/src/save-history.js';
+import { packReportStart } from '../../panel/src/report-start-archive.js';
+import { packMigrationBackup } from '../../panel/src/migration-backup.js';
+
+function packArchive(save: NarrativeSave): NarrativeSave {
+  const latest = save.committedOutcomeIds?.at(-1) ?? save.reports?.at(-1)?.id;
+  const pack = (report: NonNullable<NarrativeSave['reports']>[number]) => report.id === latest ? report : packReportStart(report);
+  let result = save;
+  if (save.reports?.some(report => report.id !== latest && report.start)) result = { ...result, reports: save.reports.map(pack) };
+  if (save.deletedReport?.report?.start && save.deletedReport.report.id !== latest) {
+    const report = pack(save.deletedReport.report);
+    if (report !== save.deletedReport.report) result = { ...result, deletedReport: { ...save.deletedReport, report } };
+  }
+  if (Array.isArray(save.migrationBackups) && save.migrationBackups.some(backup => backup?.source)) {
+    result = { ...result, migrationBackups: save.migrationBackups.map(packMigrationBackup) };
+  }
+  return result;
+}
 
 /** Players read these messages; drop the `Error:` prefix that String(error) adds. */
 export const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -25,17 +42,25 @@ export class NativeStore {
   private writes = 0;
   private loads = 0;
   private pending?: RecoveryRecord;
+  private compacted = new WeakMap<NarrativeSave, NarrativeSave>();
   constructor(private host: MetadataPort, private journal: RecoveryJournal) {}
+  private cleanHistory(save: NarrativeSave): NarrativeSave {
+    const cached = this.compacted.get(save);
+    if (cached) return cached;
+    const clean = compactSaveHistory(save);
+    this.compacted.set(save, clean);
+    return clean;
+  }
   snapshot(keys?: readonly (keyof NarrativeSave)[], battleFields?: readonly string[]): NarrativeSave {
-    const save = this.current?.payload ?? {};
+    const save = this.current?.payload ? this.cleanHistory(this.current.payload) : {};
     const selected: NarrativeSave = keys ? Object.fromEntries(keys.filter(key => key in save).map(key => [key, save[key]])) : { ...save };
     if (battleFields && selected.battle) selected.battle = { kind: selected.battle.kind,
       snap: Object.fromEntries(battleFields.filter(key => key in selected.battle!.snap).map(key => [key, selected.battle!.snap[key]])) };
-    return cloneData(compactSaveHistory(selected));
+    return cloneData(selected);
   }
   /** The current head as of this call, copied on first read; heads are replaced on commit, never edited in place. */
-  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= cloneData(compactSaveHistory(payload ?? {})); }
-  needsHistoryCompaction(): boolean { return !!this.current?.payload && compactSaveHistory(this.current.payload) !== this.current.payload; }
+  snapshotLater(): () => NarrativeSave { const payload = this.current?.payload; let copy: NarrativeSave | undefined; return () => copy ??= cloneData(payload ? this.cleanHistory(payload) : {}); }
+  needsHistoryCompaction(): boolean { return !!this.current?.payload && this.cleanHistory(this.current.payload) !== this.current.payload; }
   envelope(): NativeEnvelope | undefined { return cloneData(this.current); }
   head(): Omit<NativeEnvelope, 'payload'> | undefined { if (!this.current) return undefined; const { payload: _payload, ...head } = this.current; return structuredClone(head); }
   session(): HostSession | undefined { return structuredClone(this.active); }
@@ -122,7 +147,7 @@ export class NativeStore {
       if (!this.sameChat(session)) return this.result('conflict', session, operationId, '保存过程中聊天已切换，这次没有保存');
       let candidate: NativeEnvelope;
       try {
-        const payload = options.clear ? null : structuredClone(compactSaveHistory(update(this.snapshot())));
+        const payload = options.clear ? null : structuredClone(packArchive(compactSaveHistory(update(this.snapshot()))));
         candidate = {
           format: 'tavern-battle-native', containerVersion: 1,
           documentId: previous?.documentId ?? randomId(),

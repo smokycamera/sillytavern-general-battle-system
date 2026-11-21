@@ -4,7 +4,8 @@ import { characterWorldbookMessages, normalizeWorldbookSelection, selectedWorldb
 export interface LlmSettings {
   enabled: boolean;
   selectBattleScale: boolean;
-  commandEnemy?: boolean;
+  commandEnemy?: boolean; // Existing master switch for LLM command.
+  commandFactions?: Partial<Record<'enemy' | 'neutral', boolean>>;
   commandInterval?: 'round' | 'situation';
   commandThinking?: 'auto' | 'off';
   commandThinkingOffParams?: string;
@@ -20,9 +21,12 @@ export interface LlmSettings {
   model: string;
   models: string[];
 }
+export function commandsFaction(settings: LlmSettings, side: 'ally' | 'enemy' | 'neutral'): boolean {
+  return side !== 'ally' && settings.enabled && settings.commandEnemy === true && settings.commandFactions?.[side] !== false;
+}
 export const LLM_SETTINGS_KEY = 'tb:llm:settings:v1';
 export const COMMAND_THINKING_OFF_PARAMS = '{"thinking":{"type":"disabled"}}';
-const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandInterval: 'round', commandThinking: 'auto',
+const defaults = (): LlmSettings => ({ enabled: false, selectBattleScale: false, commandEnemy: false, commandFactions: {enemy:true, neutral:true}, commandInterval: 'round', commandThinking: 'auto',
   commandThinkingOffParams: COMMAND_THINKING_OFF_PARAMS,
   designMap: true, selectVip: true, worldbooks: [], worldbookMode: 'manual', windowSize: 6, url: '', token: '', model: '', models: [] });
 
@@ -71,6 +75,7 @@ export function readLlmSettings(): LlmSettings {
         enabled: v.enabled === true,
         selectBattleScale: false,
         commandEnemy: v.commandEnemy === true,
+        commandFactions: {enemy: v.commandFactions?.enemy !== false, neutral: v.commandFactions?.neutral !== false},
         commandInterval: v.commandInterval === 'situation' ? 'situation' : 'round',
         commandThinking: v.commandThinking === 'off' ? 'off' : 'auto',
         commandThinkingOffParams: typeof v.commandThinkingOffParams === 'string' ? v.commandThinkingOffParams : COMMAND_THINKING_OFF_PARAMS,

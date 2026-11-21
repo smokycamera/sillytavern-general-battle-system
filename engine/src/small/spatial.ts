@@ -1,15 +1,16 @@
+import { planTransportDeployment } from './transport-groups.js';
 import { combatHostile } from '../battle-control.js';
 import { agileCost } from '../phase2-traits.js';
 import { movementPoints } from '../tactics.js';
 import { GridQueue } from './grid-queue.js';
-import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, intactStructure, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, waterOnly, sailingBlocked, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
+import { layerMoveCost, groundBlocked, obstructionHeight, structureAt, intactStructure, STRUCTURE_NAMES, validateLayers, isElevated, structureDefense, waterOnly, sailingBlocked, terrainExposure, spaceRock, type FieldStructure, type GroundOverlay, type FieldLandmark, type CityRecord } from './layers.js';
 import { landmarkAt, BATTLEFIELD_SCENES, type MapGenerationRecord } from './map-design.js';
 import { isRangedWeapon } from '../loadout.js';
 import type { Combatant, ConditionDef } from '../types.js';
 import { activeTraitIds, traitPrerequisiteReason } from '../trait-sources.js';
 import { traitLevel, roughGroundCost, ignoresGroundPenalty, terrainStalks } from '../trait-levels.js';
 import { environmentTags } from '../environment.js';
-import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions } from '../aerial.js';
+import { isAirborne, sameLayer, flightCapabilityReason, type FlightConditions, type FlightContext } from '../aerial.js';
 import { SeededRng } from '../rng.js';
 import { rangedScreen } from '../guard-screen.js';
 import {validateSceneRecord,type SceneRecord,type DeploymentZone} from './scene-compiler.js';
@@ -18,12 +19,13 @@ import { gridWeaponRange } from './weapon-range.js';
 
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 
-export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill' | 'street' | 'shallow_water' | 'deep_water' | 'swamp' | 'cliff';
-export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地', street: '街道', shallow_water: '浅水', deep_water: '深水', swamp: '沼泽', cliff: '岩壁' };
+export type Terrain = 'open' | 'cover' | 'wall' | 'rough' | 'forest' | 'hill' | 'street' | 'shallow_water' | 'deep_water' | 'swamp' | 'cliff' | 'vacuum';
+export const TERRAIN_NAMES: Record<Terrain, string> = { open: '开阔地', cover: '掩体', wall: '墙体', rough: '崎岖地', forest: '森林', hill: '山地', street: '街道', shallow_water: '浅水', deep_water: '深水', swamp: '沼泽', cliff: '岩壁', vacuum: '真空' };
 export interface BattlefieldSpec {
   /** New maps allow slow units one full-allowance step; historical costs stay frozen. */
   movementCostModel?: 'minimum-step-v1';
   spatialRulesVersion?: 2;
+  exposureRules?: 1;
   groundHeight?: number[];
   heightTransitions?: HeightTransition[];
   scene?: SceneRecord;
@@ -69,6 +71,7 @@ export function standardField(width = 7, height = 9, tags: string[] = []): Battl
   return { version: 2, width, height, tiles, environment, objective: defaultBattleObjective(width, height, environment) };
 }
 export function validateField(field: BattlefieldSpec): void {
+  if (field.exposureRules !== undefined && field.exposureRules !== 1) throw Error('未知环境伤害规则');
   if (field.movementCostModel !== undefined && field.movementCostModel !== 'minimum-step-v1') throw Error('未知地形移动规则');
   if (field.generation?.scene !== undefined && !BATTLEFIELD_SCENES.includes(field.generation.scene)) throw Error('场景记录损坏');
   if (field.version !== 2 || !Number.isSafeInteger(field.width) || !Number.isSafeInteger(field.height) || field.width < 5 || field.height < 7 || !Number.isSafeInteger(field.width * field.height)) throw new Error('地图尺寸须为至少5列×7行的整数格数');
@@ -76,11 +79,12 @@ export function validateField(field: BattlefieldSpec): void {
   validateLayers(field);
   validateHeightMap(field);
   validateSceneRecord(field);
-  if (field.objective.kind === 'control' && field.objective.cells !== undefined && (!Array.isArray(field.objective.cells) || !field.objective.cells.includes(field.objective.cell) || field.objective.cells.some(p => !inBounds(field, p) || groundBlocked(field, p)))) throw Error('占领区域不合法');
+  const traversableObjective = (p:number) => !groundBlocked(field,p) || field.environment?.includes('sea') && field.tiles[p] === 'deep_water' && !intactStructure(field,p);
+  if (field.objective.kind === 'control' && field.objective.cells !== undefined && (!Array.isArray(field.objective.cells) || !field.objective.cells.includes(field.objective.cell) || field.objective.cells.some(p => !inBounds(field, p) || !traversableObjective(p)))) throw Error('占领区域不合法');
   if (field.environment !== undefined && (!Array.isArray(field.environment) || field.environment.some((t) => typeof t !== 'string'))) throw new Error('环境附加记录损坏');
   const floodedReference = field.objective.kind === 'annihilation' && !!field.generation?.waterCoverage
     && field.tiles[field.objective.cell] === 'deep_water' && !field.structures?.[field.objective.cell];
-  if (!inBounds(field, field.objective.cell) || !floodedReference && (field.layerVersion ? groundBlocked(field, field.objective.cell) : field.tiles[field.objective.cell] === 'wall')) throw new Error('目标必须是合法可通行格');
+  if (!inBounds(field, field.objective.cell) || !floodedReference && (field.layerVersion ? !traversableObjective(field.objective.cell) : field.tiles[field.objective.cell] === 'wall')) throw new Error('目标必须是合法可通行格');
   if (field.objective.kind === 'escape' && field.objective.defenderWins !== undefined && typeof field.objective.defenderWins !== 'boolean') throw new Error('护送判胜规则损坏');
 }
 export function inBounds(field: BattlefieldSpec, cell: number): boolean { return Number.isInteger(cell) && cell >= 0 && cell < field.tiles.length; }
@@ -124,6 +128,8 @@ export function terrainName(field: BattlefieldSpec, cell: number): string {
     if (field.generation.family === 'mountain') return '岩障';
     if (field.generation.family === 'plains') return '巨石';
   }
+  if (spaceRock(field, cell)) return '小行星';
+  if (terrain === 'open' && field.environment?.includes('cosmos')) return '密封平台';
   return terrain ? TERRAIN_NAMES[terrain] : '';
 }
 export function terrainCellLabel(field: BattlefieldSpec, cell: number, actor?: Combatant): string {
@@ -182,15 +188,36 @@ export function tileCost(field: BattlefieldSpec, cell: number, actor?: Combatant
  * at most its FULL normal allowance, never its remaining allowance. Thus a 2-MP unit
  * with only 1 MP left still cannot enter a 3-cost fortification. Prohibitions stay infinite. */
 export function movementStepCost(field: BattlefieldSpec, cell: number, actor: Combatant, tags = field.environment ?? [],from=actor.pos??cell): number {
-  const cost = tileCost(field, cell, actor)+heightStepCost(field,from,cell,actor);
+  const hazard = terrainExposure(field, cell, actor);
+  const previous = terrainExposure(field, from, actor);
+  if (hazard && hazard !== previous) return Infinity;
+  if (previous && !groundBlocked(field, cell, actor)) return 1;
+  return limitStepCost(field, actor, tags, tileCost(field, cell, actor) + heightStepCost(field,from,cell,actor));
+}
+function limitStepCost(field: BattlefieldSpec, actor: Combatant, tags: string[], cost: number): number {
   if (field.movementCostModel === 'minimum-step-v1' && Number.isFinite(cost)) return Math.min(cost, Math.max(1, movementPoints(actor, tags)));
   return !actor.numericModel && field.layerVersion && Number.isFinite(cost) ? Math.min(cost, movementPoints(actor, tags)) : cost;
+}
+
+/** Cache only during one search with fixed actor, occupancy and terrain. Uphill costs still depend on direction. */
+export function movementQuery(field: BattlefieldSpec, units: Combatant[], actor: Combatant, tags: string[]) {
+  const occupancy: boolean[] = [], terrain: number[] = [];
+  const cap = limitStepCost(field,actor,tags,Number.MAX_VALUE);
+  return {
+    allowed: (cell: number) => occupancy[cell] ??= canOccupy(field,units,actor,cell),
+    cost: (cell: number, from: number) => {
+      if (field.exposureRules && (terrainExposure(field, from, actor) || terrainExposure(field, cell, actor)))
+        return movementStepCost(field, cell, actor, tags, from);
+      const total = (terrain[cell] ??= tileCost(field,cell,actor)) + heightStepCost(field,from,cell,actor);
+      return Number.isFinite(total) ? Math.min(cap,total) : total;
+    },
+  };
 }
 export function footprint(unit: Combatant): number { return unit.mount === true || unit.body && unit.body !== 'human' ? 2 : 1; }
 export function canOccupy(field: BattlefieldSpec, units: readonly Combatant[], actor: Combatant, cell: number): boolean {
   if (!field.layerVersion && sailingBlocked(field, cell, actor)) return false;
   if (!inBounds(field, cell) || (field.layerVersion ? groundBlocked(field, cell, actor) : field.tiles[cell] === 'wall' && !isAirborne(actor))) return false;
-  const occupants = units.filter((u) => u.id !== actor.id && u.pos === cell && sameLayer(actor, u) && u.hp > 0 && (u.status === 'ready' || u.status === 'routing'));
+  const occupants = units.filter((u) => !u.ride && u.id !== actor.ride?.platformId && u.id !== actor.id && u.pos === cell && sameLayer(actor, u) && u.hp > 0 && (u.status === 'ready' || u.status === 'routing'));
   if (occupants.some((u) => u.side !== actor.side)) return false;
   return footprint(actor) + occupants.reduce((n, u) => n + footprint(u), 0) <= 2;
 }
@@ -317,6 +344,7 @@ function heightLineOfSight(field: BattlefieldSpec, from: Combatant, to: Combatan
 }
 export function unitLineOfSight(field: BattlefieldSpec, from: Combatant, to: Combatant): boolean {
   if (!inBounds(field, from.pos!) || !inBounds(field, to.pos!)) return false;
+  if (field.environment?.includes('cosmos') && !lineOfSight(field, from.pos!, to.pos!, cell => cell !== from.pos && cell !== to.pos && spaceRock(field, cell))) return false;
   if (!field.layerVersion) return isAirborne(from) || isAirborne(to) || lineOfSight(field, from.pos!, to.pos!);
   if (field.spatialRulesVersion === 2) return heightLineOfSight(field, from, to);
   const height = (u: Combatant) => isAirborne(u) ? 2.25 : isElevated(u) ? 1.25 : .25;
@@ -433,11 +461,24 @@ function deploymentScorer(field: BattlefieldSpec, unit: Combatant, seed: string)
 }
 
 /** Pure preparation shared by generator capacity checks and SmallBattle.start. */
-export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true): Combatant[] {
-  const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions) ? { airborne: true } : {}) }));
+export function prepareGridDeployment(field: BattlefieldSpec, units: readonly Combatant[], seed = 'deployment', conditions?: FlightConditions, enableFlight = true, flightContext: FlightContext = { fieldTags: field.environment }): Combatant[] {
+  if (units.some(u => u.ride)) {
+    units = planTransportDeployment(units).deployed;
+    const physical = prepareGridDeployment(field, units.filter(u => !u.ride), seed, conditions, enableFlight, flightContext);
+    const positions = new Map(physical.map(u => [u.id, u]));
+    return units.map(u => {
+      const carrier = positions.get(u.ride?.platformId ?? u.id);
+      if (!carrier) throw Error(u.name + '的平台未部署');
+      return u.ride ? { ...u, pos: carrier.pos, elevation: carrier.elevation, airborne: carrier.airborne } : carrier;
+    });
+  }
+  const prepared = units.map(u => ({ ...u, ...(enableFlight && u.rulesVersion === 'v2' && u.airborne === undefined && !flightCapabilityReason(u, conditions, flightContext) ? { airborne: true } : {}) }));
   for(const u of prepared) {
     const frozen=field.initialDeployment&&Object.hasOwn(field.initialDeployment,u.id)?field.initialDeployment[u.id]:undefined;
-    if(frozen&&u.pos===undefined){if(frozen.airborne&&(!enableFlight||flightCapabilityReason(u,conditions)))throw Error('冻结部署的飞行状态与实际能力不一致');Object.assign(u,frozen);}
+    if (frozen && u.pos === undefined) {
+      if (frozen.airborne && (!enableFlight || flightCapabilityReason(u, conditions, flightContext))) throw Error('冻结部署的飞行状态与实际能力不一致');
+      Object.assign(u, frozen);
+    }
     // Same precedence as gridDeploymentCells: a unit's own zones replace its side's zones.
     const own=field.deploymentZones?.filter(z=>z.unitId===u.id)??[];
     const zones=own.length?own:field.deploymentZones?.filter(z=>!z.unitId&&z.side===u.side)??[];
@@ -466,7 +507,11 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
   const occupied: Combatant[] = [];
   const modern = units.every(u => u.rulesVersion === 'v2');
   const needsPlacement = (u: Combatant) => u.pos === undefined || sailingBlocked(field, u.pos, u);
+  const medium = field.exposureRules && field.environment?.some(tag => tag === 'sea' || tag === 'cosmos')
+    ? field.tiles.findIndex(t => t === 'deep_water' || t === 'vacuum') : -1;
+  const restricted = (u:Combatant) => medium >= 0 && !!terrainExposure(field,medium,u);
   const ordered = [...scratch].sort((a, b) => Number(needsPlacement(a)) - Number(needsPlacement(b))
+    || Number(restricted(b)) - Number(restricted(a))
     || (modern ? footprint(b) - footprint(a)
       || Number(activeTraitIds(a).includes('vanguard')) - Number(activeTraitIds(b).includes('vanguard'))
       || Number(isRangedWeapon(a.weapon)) - Number(isRangedWeapon(b.weapon))
@@ -474,7 +519,7 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
     || a.id.localeCompare(b.id));
   const scorers = new Map(ordered.filter(u => modern && u.pos === undefined).map(u => [u.id, deploymentScorer(field, u, seed)]));
   const select = (unit: Combatant, candidates: number[]) => {
-    let legal = candidates.filter(n => canOccupy(field, occupied, unit, n));
+    let legal = candidates.filter(n => !terrainExposure(field, n, unit) && canOccupy(field, occupied, unit, n));
     // 先锋优先利用专属前出域，避免占掉普通单位唯一可用的部署容量。
     if (modern && activeTraitIds(unit).includes('vanguard')&&!field.deploymentZones?.length) {
       const advanced = legal.filter(n => deploymentDepth(field, unit.side, n) === 3);
@@ -493,7 +538,7 @@ export function deployOnGrid(field: BattlefieldSpec, units: Combatant[], seed = 
       if (cell === undefined) throw new Error(`${unit.name}具有航行特质，但战场没有可用的深水或浅水部署格`);
       unit.pos = cell; occupied.push(unit); continue;
     }
-    const cell = unit.pos ?? select(unit, candidates);
+    const cell = unit.pos === undefined || terrainExposure(field, unit.pos, unit) ? select(unit, candidates) : unit.pos;
     if (cell === undefined || !candidates.includes(cell) || !canOccupy(field, occupied, unit, cell)) throw new Error('部署越界、跨阵营或容量不足；请减少上场单位');
     unit.pos = cell; occupied.push(unit);
   }

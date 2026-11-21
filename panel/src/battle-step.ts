@@ -40,15 +40,20 @@ export function applyBattleStep(battle: SmallBattle | MassBattle, result: Battle
   const units = restored.combatants.map(unit => {
     const original = byId.get(unit.id);
     if (!original) return unit;
+    // Drop the old carrier-bound position before copying the worker's current position.
+    if (original.ride) delete original.pos;
     for (const key of Object.keys(original)) if (!(key in unit)) delete (original as unknown as Record<string, unknown>)[key];
     return Object.assign(original, unit);
   });
   originalUnits.splice(0, originalUnits.length, ...units);
   const rng = battle.rng, conditions = battle.conditions, rules = battle.rules;
-  const controls = battle instanceof SmallBattle ? battle.allyAiControl : undefined;
+  const smallState = battle instanceof SmallBattle ? { allyAiControl: battle.allyAiControl, platforms: battle.platforms } : undefined;
   if (rng instanceof SeededRng && typeof result.snap.rngState === 'number') rng.setState(result.snap.rngState);
   for (const condition of result.conditions) conditions.register(condition);
   Object.assign(battle, restored, { combatants: originalUnits, rng, conditions, rules });
-  if (battle instanceof SmallBattle) battle.allyAiControl = controls!;
+  if (battle instanceof SmallBattle) {
+    Object.assign(battle, smallState);
+    battle.platforms.restore();
+  }
   else battle.damageTaken = new Map(result.damageTaken);
 }

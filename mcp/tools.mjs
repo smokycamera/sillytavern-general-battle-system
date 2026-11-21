@@ -61,15 +61,16 @@ export function createBattleMcp(broker) {
   const gameWrite = { ...gameSession, stateId: z.string().describe('最近 battle_state 或游戏操作返回的 stateId'), requestId };
   const cell = z.union([z.number().int().min(0), z.string().regex(/^[A-Za-z][1-9]\d*$/)]).describe('地图零起始索引，或 A1 等坐标');
   const action = z.object({
-    type: z.enum(['move','attack','charge','ability','brace','overwatch','reload','suppress','retreat','takeoff','land','climb','structure','gate','haste','end_turn','auto']),
+    type: z.enum(['move','attack','charge','ability','brace','overwatch','reload','suppress','retreat','takeoff','land','climb','structure','gate','haste','end_turn','auto','board','leave','select-platform','merge']),
+    count: z.number().int().positive().optional(),
     cell: cell.optional(), direction: z.enum(['advance','withdraw']).optional(), targetId: z.string().optional(),
-    abilityId: z.string().optional(), weaponMode: z.enum(['primary','sidearm']).optional(), enabled: z.boolean().optional(),
+    abilityId: z.string().optional(), weaponMode: z.string().regex(/^(primary|sidearm|batch:.+|volley:(?:ranged|melee|all))$/).optional(), enabled: z.boolean().optional(),
   }).strict();
-  const setup = z.object({ mode: z.enum(['small','mass']).optional(), field: z.enum(['plains','urban','siege','forest','mountain']).optional(),
+  const setup = z.object({ mode: z.enum(['small','mass']).optional(), field: z.enum(['plains','urban','siege','forest','mountain','sea','cosmos']).optional(),
     lighting: z.enum(['day','night']).optional(), mapLayout: z.enum(['standard','indoor']).optional(),
     objectiveMode: z.enum(['auto','annihilation','siege','control','escort','intercept']).optional(), siegeAttacker: z.enum(['ally','enemy']).optional() }).strict();
   const preparation = {
-    setup: setup.optional(), deployment: z.array(z.object({ unitId: z.string(), side: z.enum(['ally','enemy']).optional() }).strict()).min(1).max(64).optional().describe('完整参战名单；省略沿用当前名单，side省略沿用档案阵营'),
+    setup: setup.optional(), deployment: z.array(z.object({ unitId: z.string(), side: z.enum(['ally','enemy']).optional() }).strict()).min(1).optional().describe('完整参战名单；省略沿用当前名单，side省略沿用档案阵营'),
     protagonistId: z.string().optional(), commanderId: z.string().optional(),
     recovery: z.enum(['none','recoverable']).optional().describe('默认none；recoverable在开战提交时恢复所选单位的可恢复生命/伤兵，不复活阵亡或补回永久缺员'),
     commanders: z.record(z.unknown()).optional(), battlefield: z.record(z.unknown()).optional().describe('省略使用普通随机地图；不必传intent，复杂场景格式见battle_state.preparation'),
@@ -91,7 +92,7 @@ export function createBattleMcp(broker) {
       targetId: z.string().optional(), abilityId: z.string().optional(), abilityActorId: z.string().optional(), haste: z.boolean().optional() }).strict()).max(64), resolve: z.boolean().optional(),
   }, 'game_orders');
   register('battle_recover', '战后收兵、恢复指定档案的可恢复生命/伤兵与士气、解除濒死，并默认重新加入参战。不能用于进行中的战斗，不能复活阵亡或解散档案。', {
-    ...gameWrite, unitIds: z.array(z.string()).min(1).max(64), deploy: z.boolean().optional().describe('默认true；false仅恢复，未参战的档案留在储存器'),
+    ...gameWrite, unitIds: z.array(z.string().min(1)).min(1), deploy: z.boolean().optional().describe('默认true；false仅恢复，未参战的档案留在储存器'),
   }, 'game_recover');
   register('battle_auto', '启动或暂停全自动，立即返回运行状态，不等待整场结束。pause不需stateId；正在结算的动作保存完成后可接管。后续用 battle_state 查看进度。', {
     ...gameSession, requestId, stateId: z.string().optional().describe('start必填，pause可省略'), action: z.enum(['start','pause']),
@@ -99,7 +100,7 @@ export function createBattleMcp(broker) {
   register('battle_sandbox', '隔离试战：start一键生成测试队伍并开打（默认双方各剑士/射手），restart满状态重开同一地图与部署，reports读最近20场独立战报，close返回正式档案。不会写正式档案/库存/成长；面板刷新后可restart。', {
     ...gameSession, action: z.enum(['start','restart','reports','close']), requestId: requestId.optional().describe('start/restart/close必填；reports只读不需要'), reportId: z.string().optional().describe('reports省略时列目录，指定时返回逐轮内容'),
     participants: z.array(z.object({ name: z.string().max(80).optional(), side: z.enum(['ally','enemy']), scale: z.enum(['hero','mook','company']).optional(),
-      level: z.number().int().min(1).max(10).optional(), weaponClass: z.string().max(50).optional().describe('例如sword或rifle'), personnel: z.number().int().min(1).max(10000).optional().describe('仅部队人数，英雄不可填写') }).strict()).min(2).max(64).optional(),
+      level: z.number().int().min(1).max(10).optional(), weaponClass: z.string().max(50).optional().describe('例如sword或rifle'), personnel: z.number().int().min(1).max(10000).optional().describe('仅部队人数，英雄不可填写') }).strict()).min(2).optional(),
     setup: setup.optional(), commanders: z.record(z.unknown()).optional(), battlefield: z.record(z.unknown()).optional(), nonLethal: z.boolean().optional().describe('默认true'),
   }, 'game_sandbox');
   return server;

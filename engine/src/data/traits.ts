@@ -344,6 +344,10 @@ export const TRAITS: Trait[] = [
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'water-crossing' }],
   },
   {
+    id: 'space-adapted', name: '太空机动', desc: '能在真空中生存、移动和作战，在其他环境可按飞行L1起降。',
+    v2SourceReady: true, effects: [{ kind: 'flag', flag: 'space-adapted' }],
+  },
+  {
     id: 'sailing', name: '航行', desc: '只能在深水、浅水移动；部署位置不在水中时，自动移至最近的可用水格',
     v2SourceReady: true, effects: [{ kind: 'flag', flag: 'sailing' }],
   },
@@ -495,6 +499,9 @@ export const TRAIT_FORMER_NAMES: Readonly<Record<string, readonly string[]>> = {
 export function resolveTraitId(value: string, registry = traitRegistry()): string | undefined {
   const name = value.trim();
   if (registry.has(name)) return name;
+  const english = name.toLowerCase().replace(/\s+/g, '-');
+  if (english === 'space-mobility' && registry.has('space-adapted')) return 'space-adapted';
+  if (registry.has(english)) return english;
   const alias = TRAIT_ALIASES[name];
   if (alias && registry.has(alias)) return alias;
   return [...registry.values()].find((t) => t.name === name)?.id;

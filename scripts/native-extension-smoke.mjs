@@ -10,13 +10,14 @@ assert.ok(['metadata-only', 'legacy-full'].includes(metadataMode), 'Unknown meta
 const artifacts = path.resolve('artifacts/native-extension-smoke', metadataMode); mkdirSync(artifacts, { recursive: true });
 const disk = new Map(); const results = []; const errors = [];
 let jevDelay = 0; let jevRequests = 0;
-const fixture = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><textarea id="send_textarea">未发送的玩家草稿 | /send {{macro}}</textarea><input id="pending-file" value="fixture-attachment.txt"><main id="chat"></main><script>
+const fixture = `<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><textarea id="send_textarea">未发送的玩家草稿 | /send {{macro}}</textarea><input id="pending-file" value="fixture-attachment.txt"><main id="chat"></main><script>
+document.documentElement.lang = new URLSearchParams(location.search).get('lang') || document.documentElement.lang;
 window.handlers = new Map(); window.__failure=false; window.__delay=0; window.__generations=0; window.__prompts={};window.__metadataSaves=0;window.__fullSaves=0;
 window.persistFixture=async full=>{const snapshot={id:context.chatId,metadata:structuredClone(context.chatMetadata),...(full?{chat:structuredClone(context.chat)}:{})};if(window.__delay)await new Promise(r=>setTimeout(r,window.__delay));if(!window.__failure){const response=await fetch(full?'/fixture/save':'/fixture/metadata',{method:'POST',body:JSON.stringify(snapshot)});if(!response.ok)throw Error('Fixture save failed: '+response.status)}};
-window.context={ characterId:'0', characters:[{avatar:'fixture.png',name:'Fixture'}],chatId:'a',name1:'Tester',chat:[],chatMetadata:{},extensionSettings:{},
+window.context={ characterId:'0', characters:[{avatar:'fixture.png',name:'Fixture'}],chatId:'a',name1:'Tester',chat:[],chatMetadata:{},extensionSettings:{tavernBattle:{language:localStorage.getItem('fixture-tb-language')}},
 eventTypes:Object.fromEntries(['GENERATION_STARTED','GENERATION_AFTER_COMMANDS','GENERATION_ENDED','GENERATION_STOPPED','MESSAGE_RECEIVED','MESSAGE_EDITED','MESSAGE_SWIPED','MESSAGE_DELETED','MESSAGE_SENT','USER_MESSAGE_RENDERED','CHAT_CHANGED'].map(x=>[x,x])),
 eventSource:{on(k,cb){const a=handlers.get(k)||new Set();a.add(cb);handlers.set(k,a)},removeListener(k,cb){handlers.get(k)?.delete(cb)},async emit(k,...args){for(const cb of handlers.get(k)||[])await cb(...args)}},
-getRequestHeaders:()=>({'Content-Type':'application/json'}),saveSettingsDebounced(){},
+getRequestHeaders:()=>({'Content-Type':'application/json'}),saveSettingsDebounced(){const language=this.extensionSettings.tavernBattle.language;if(language)localStorage.setItem('fixture-tb-language',language)},
 async saveMetadata(){window.__metadataSaves++;await persistFixture(${metadataMode === 'legacy-full'})},
 async saveChat(){window.__fullSaves++;await persistFixture(true)},
 setExtensionPrompt(id,value){__prompts[id]=value},addOneMessage(message){const p=document.createElement('p');p.textContent=message.mes;document.getElementById('chat').append(p)},async generate(type,options){window.__generations++;window.__generationType=type;if(type==='normal'){document.getElementById('send_textarea').value='';document.getElementById('pending-file').value=''}await context.eventSource.emit('GENERATION_STARTED',type,options,false);await context.eventSource.emit('GENERATION_AFTER_COMMANDS',type,options,false);context.chat.push({is_user:false,mes:'合成宿主的完整叙述回复',swipe_id:0,gen_finished:'complete'});await context.saveChat();await context.eventSource.emit('MESSAGE_RECEIVED',context.chat.length-1);await context.eventSource.emit('GENERATION_ENDED',context.chat.length)}};
@@ -26,7 +27,7 @@ awaitReady();async function awaitReady(){await switchChat('a');await import('/ex
 </script></body></html>`;
 const server = http.createServer(async (req,res) => {
   try {
-    if (req.url === '/') { res.setHeader('Content-Type','text/html; charset=utf-8');res.end(fixture);return; }
+    if (new URL(req.url,'http://localhost').pathname === '/') { res.setHeader('Content-Type','text/html; charset=utf-8');res.end(fixture);return; }
     if (req.url === '/api/users/me') { res.setHeader('Content-Type','application/json');res.end(JSON.stringify({handle:'smoke-user'}));return; }
     if (req.method === 'POST') {
       const chunks=[];for await(const chunk of req)chunks.push(chunk);const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -67,9 +68,67 @@ try {
   await page.locator('#tavern-battle-native-entry').click();
   const frame=page.frameLocator('#tavern-battle-native-panel iframe');await frame.locator('#app h1').waitFor();
   check('独立静态面板已加载',await frame.locator('[data-action="workspace-tab"]').count()>0);
+  const languageButton = frame.locator('[data-action="language-toggle"]');
+  check('语言入口在战阵开关左边', await languageButton.evaluate(button =>
+    button.textContent === 'English' && button.nextElementSibling?.dataset.action === 'plugin-toggle'));
+  await frame.locator('.workspace-nav [data-tab="settings"]').click();
+  const llmSettingsCopy = () => frame.locator('.llm-settings').textContent();
+  const settingsTextRemoved = async () => !/OpenAI 兼容接口|所选正文发送给该服务|6000|OpenAI-compatible connection|Settings save automatically/i.test(await llmSettingsCopy());
+  check('中文版副 API 设置移除旧说明', await settingsTextRemoved());
+  await frame.locator('[data-action="plugin-toggle"]').click();
+  await frame.locator('[data-action="plugin-toggle"][aria-pressed="false"]').waitFor();
+  await languageButton.click();
+  check('关闭战阵时仍可切换英文', await languageButton.evaluate(button =>
+    button.textContent === '简体中文' && document.documentElement.lang === 'en'));
+  await frame.locator('[data-action="plugin-toggle"]').click();
+  await frame.locator('[data-action="plugin-toggle"][aria-pressed="true"]').waitFor();
+  await page.reload(); await ready(); await entry.click();
+  check('刷新后保持英文并翻译外层浮窗和导航',
+    await languageButton.innerText() === '简体中文' &&
+    await page.getByRole('button', { name: 'Saves', exact: true }).count() === 1 &&
+    await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').innerText() === 'Battle');
+  await frame.locator('.workspace-nav [data-tab="settings"]').click();
+  check('英文版副 API 设置移除旧说明并显示英文阵营选项', await settingsTextRemoved() &&
+    /Command Enemies.*Command Third-Party Forces/s.test(await llmSettingsCopy()));
+  check('英文设置显示发送范围与提示词编辑标签',
+    await frame.locator('.prompt-scope h2').innerText() === 'Story Reference Scope' &&
+    (await frame.locator('.prompt-scope p').first().innerText()).startsWith('Selected for context:') &&
+    await frame.locator('[data-detail-id="prompt-editor-units"] summary').innerText() === 'Edit Prompt');
+  check('英文设置显示四个世界书条目并注入英文正文',
+    (await frame.locator('.worldbook-settings [data-worldbook-entry] strong').allTextContents()).join('|') ===
+      'Battle Interaction and Reports|Equipment and Ability Power Reference|Units and Equipment|Skills and Effects' &&
+    (await frame.locator('#wb-5-content').inputValue()).includes('from spacecraft to spacewalkers') &&
+    await page.evaluate(() => Object.values(__prompts).some(text => text.includes('from spacecraft to spacewalkers'))));
+  await page.setViewportSize({ width: 320, height: 680 });
+  const outerPanel = page.locator('#tavern-battle-native-panel');
+  await outerPanel.evaluate(panel => {
+    for (const [edge, value] of Object.entries({ top: 48, right: 10, bottom: 15, left: 10 })) {
+      panel.style.setProperty(`--tb-safe-${edge}`, `${value}px`);
+    }
+  });
+  const buttons = await frame.locator('.app-controls button').evaluateAll(elements => elements.map(el => {
+    const box = el.getBoundingClientRect();
+    return { top: box.top, left: box.left, right: box.right, width: el.ownerDocument.documentElement.clientWidth };
+  }));
+  check('320px宽度下三个按钮都在同一行并处于模拟安全区',
+    (await outerPanel.locator('header').boundingBox()).y >= 48 &&
+    buttons.length === 3 && buttons.every(box => box.top === buttons[0].top && box.left >= 0 && box.right <= box.width));
+  await page.setViewportSize({ width: 844, height: 390 });
+  await outerPanel.evaluate(panel => {
+    panel.style.setProperty('--tb-safe-top', '0px');
+    panel.style.setProperty('--tb-safe-left', '44px');
+    panel.style.setProperty('--tb-safe-right', '44px');
+  });
+  const landscape = await outerPanel.boundingBox();
+  check('横屏浮窗避开模拟的两侧开孔', landscape.x >= 44 && landscape.x + landscape.width <= 844 - 44);
+  await outerPanel.evaluate(panel => {
+    for (const edge of ['top', 'right', 'bottom', 'left']) panel.style.removeProperty(`--tb-safe-${edge}`);
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await languageButton.click();
   // Reproduce an existing rc.1 journal: envelope saved, message source tag not saved.
   const partial = await page.evaluate(async()=>{
-    context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero"/><spawn name="原生敌军" side="enemy" scale="hero"/></tb>',swipe_id:0,gen_finished:'complete'});
+    context.chat.push({is_user:false,mes:'<tb><spawn name="原生卫兵" side="ally" scale="hero" weapon="卫兵剑:剑L3"/><spawn name="原生敌军" side="enemy" scale="hero" weapon="卫兵剑:剑L3"/></tb>',swipe_id:0,gen_finished:'complete'});
     await context.saveChat();
     const full=context.saveChat;
     context.saveChat=()=>persistFixture(false);
@@ -130,6 +189,11 @@ try {
   await page.evaluate(()=>{for(let i=0;i<100;i++){__tavernBattleNative.close();__tavernBattleNative.open()}});
   check('100次开关保持单个面板和固定监听数',await page.evaluate(n=>document.querySelectorAll('#tavern-battle-native-panel iframe').length===1&&[...handlers.values()].reduce((a,s)=>a+s.size,0)===n,listeners));
   check('关闭重开保留表单草稿',await frame.locator('[data-role="gen-name"]').inputValue()==='保留的未提交表单');
+  await languageButton.click();
+  check('切语言保留未提交的单位表单',
+    await frame.locator('[data-role="gen-name"]').inputValue() === '保留的未提交表单' &&
+    await frame.locator('[data-action="gen-add"]').innerText() === 'Preview Unit');
+  await languageButton.click();
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
   const savesBefore = await page.evaluate(()=>__metadataSaves+__fullSaves);
   await page.evaluate(()=>{__delay=600});
@@ -142,6 +206,14 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();
   await frame.locator('[data-action="small-start"]').first().click();await page.waitForFunction(()=>!!window.__tavernBattleNative.service.snapshot().battle);await idle(frame);
   check('原生面板可以开始并保存小战',(await state()).battle.kind==='small');
+  const battleBeforeLanguage = (await state()).battle;
+  const writesBeforeLanguage = await page.evaluate(() => __metadataSaves + __fullSaves);
+  await languageButton.click();
+  check('战斗中切换英文只更新视图',
+    await frame.locator('[data-action="grid-endturn"]').innerText() === 'End Turn' &&
+    await page.evaluate(count => __metadataSaves + __fullSaves === count, writesBeforeLanguage) &&
+    JSON.stringify((await state()).battle) === JSON.stringify(battleBeforeLanguage));
+  await languageButton.click();
   check('战场已移除 JEV 切换入口',await frame.locator('[data-role="jev-mode"]').count()===0);
   await frame.locator('[data-action="workspace-tab"][data-tab="settings"]').first().click();
   // isDisabled() follows the wrapping label to its enabled select in Playwright.
@@ -160,11 +232,31 @@ try {
   const paused=await state();await page.waitForTimeout(800);check('收起面板后全自动暂停',JSON.stringify((await state()).battle)===JSON.stringify(paused.battle));
   await page.evaluate(()=>__tavernBattleNative.open());
   await page.screenshot({path:path.join(artifacts,'desktop.png')});
-  await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click();await idle(frame);
-  check('小战结算与战报归档只入账一次',(await state()).reports?.length===1&&(await state()).committedOutcomeIds?.length===1);
-  await frame.locator('[data-action="out-epilogue"]').first().click();await idle(frame);
+  const battleId = 'small:' + paused.battle.snap.seed;
+  if (!paused.committedOutcomeIds?.includes(battleId)) {
+    await frame.locator('[data-action="battle-finish"][data-reason="ceasefire"]').click(); await idle(frame);
+  }
+  const settled = await state();
+  check('小战结算与战报归档只入账一次',settled.reports?.length===1 && settled.reports[0].id===battleId &&
+    settled.committedOutcomeIds?.length===1 && settled.committedOutcomeIds[0]===battleId);
+  await languageButton.click();
+  await frame.locator('.workspace-nav [data-tab="reports"]').click();
+  check('英文战报可以查看结算结果并发送完整记录',
+    await frame.locator('.report-workspace h2').innerText() === 'Battle Report' &&
+    await frame.locator('.report-workspace [data-action="out-digest"]').innerText() === 'Send Full Report');
+  await frame.locator('.workspace-nav [data-tab="settings"]').click();
+  check('英文指挥设置能识别敌方与第三方选项', await frame.locator('label:has([data-role="llm-faction-enemy"])').innerText() === 'Command Enemies' &&
+    await frame.locator('label:has([data-role="llm-faction-neutral"])').innerText() === 'Command Third-Party Forces');
+  check('英文设置显示实际用于发送的默认提示', (await frame.locator('[data-role="prompt-template"][data-section="settlement"]').inputValue()).startsWith('Describe the battle using the recorded events.'));
+  await frame.locator('.workspace-nav [data-tab="reports"]').click();
+  await frame.locator('.report-workspace [data-action="out-epilogue"]').click();await idle(frame);
+  check('发送英文终章使用英文提示和装备数量说明', await page.evaluate(() => {
+    const message = context.chat.at(-1).mes;
+    return message.includes('【Battle System · Epilogue】') && message.includes('Use the report to describe the battle in detail. Do not output a <tb> block.') &&
+      message.endsWith('Pay attention to changes in equipment quantities. A decrease means the unit members using that equipment were killed.');
+  }));
   check('战报只插入用户消息，不自动生成，并保留草稿附件',await page.evaluate(()=>__generations===0&&context.chat.at(-1).is_user===true&&document.getElementById('send_textarea').value.includes('玩家草稿')&&document.getElementById('pending-file').value==='fixture-attachment.txt'&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='inserted'));
-  await frame.locator('[data-action="workspace-tab"][data-tab="reports"]').first().click();await idle(frame);
+  await languageButton.click();
   await frame.locator('[data-action="delivery-generate"]').first().click();await idle(frame);
   check('用户手动点击发送后只生成一次',await page.evaluate(()=>__generationType==='regenerate'&&__generations===1&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='sent'));
   const before=await state();
@@ -181,6 +273,7 @@ try {
   await frame.locator('[data-action="workspace-tab"][data-tab="units"]').first().click();await idle(frame);
   await frame.locator('[data-action="narrative-approve"]').click();await page.waitForFunction(()=>__tavernBattleNative.service.snapshot().storage?.length===34);await idle(frame);
   await frame.locator('[data-action="workspace-tab"][data-tab="battle"]').first().click();await idle(frame);
+  await frame.locator('[data-role="simple-battle"]').check(); await idle(frame);
   await frame.locator('[data-action="mass-start"]').first().click();await idle(frame);
   const massRound=(await state()).battle.snap.round;
   const massCheckpoint = await page.evaluate(()=>JSON.stringify(context.chatMetadata.tavernBattle));
@@ -274,6 +367,17 @@ try {
   check('拖动后仍能点击打开',await page.locator('#tavern-battle-native-panel').isVisible());
   await page.evaluate(()=>__tavernBattleNative.dispose());
   check('停用清除入口面板、注入和监听',await page.evaluate(()=>!document.getElementById('tavern-battle-native-entry')&&!document.querySelector('iframe')&&[...handlers.values()].every(s=>s.size===0)&&!__prompts['tavern-battle-native:context']));
+  await page.evaluate(() => localStorage.removeItem('fixture-tb-language'));
+  await page.goto(url + '?lang=en-US'); await ready(); await entry.click();
+  check('英文宿主首次打开时，浮窗、战斗页和世界书默认使用英文',
+    await page.getByRole('button', { name: 'Saves', exact: true }).count() === 1 &&
+    await languageButton.innerText() === '简体中文' &&
+    await page.evaluate(() => Object.values(__prompts).some(text => text.includes('from spacecraft to spacewalkers')) &&
+      !localStorage.getItem('fixture-tb-language')));
+  await languageButton.click(); await page.reload(); await ready(); await entry.click();
+  check('英文宿主刷新后保留玩家手动选择的中文',
+    await page.getByRole('button', { name: '存档管理', exact: true }).count() === 1 &&
+    await languageButton.innerText() === 'English' && await page.evaluate(() => document.documentElement.lang === 'en-US'));
   check('无未处理页面异常',errors.length===0);
 } catch(error) {
   console.error(error);process.exitCode=1;

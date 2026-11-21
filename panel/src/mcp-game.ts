@@ -1,3 +1,4 @@
+import { optionWeaponMode, type WeaponMode } from '../../engine/src/equipment-batches.js';
 import { SmallBattle, MassBattle, cellLabel, gridColumnIndex, FORMATION_NODES, type Combatant, type Order } from '../../engine/src/index.js';
 import { randomId } from '../../host/src/browser-compat.js';
 import { battleAbilities } from './battle-skills.js';
@@ -5,12 +6,13 @@ import { formationChoices } from './formation-orders.js';
 import { publicBattleEvents } from './battle-reports.js';
 
 export interface GameAction {
-  type: 'move' | 'attack' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'reload' | 'suppress' | 'retreat' | 'takeoff' | 'land' | 'climb' | 'structure' | 'gate' | 'haste' | 'end_turn' | 'auto';
+  type: 'move' | 'attack' | 'charge' | 'ability' | 'brace' | 'overwatch' | 'reload' | 'suppress' | 'retreat' | 'takeoff' | 'land' | 'climb' | 'structure' | 'gate' | 'haste' | 'end_turn' | 'auto' | 'board' | 'leave' | 'select-platform' | 'merge';
+  count?: number;
   cell?: number | string;
   direction?: 'advance' | 'withdraw';
   targetId?: string;
   abilityId?: string;
-  weaponMode?: 'primary' | 'sidearm';
+  weaponMode?: WeaponMode;
   enabled?: boolean;
 }
 type Battle = SmallBattle | MassBattle;
@@ -44,6 +46,7 @@ function unitView(u: Combatant, b: Battle | null) {
   return { id: u.id, name: u.name, side: u.side, scale: u.scale, level: u.level, body: u.body,
     hp: u.hp, hpMax: u.base.hpMax, morale: u.morale, status: u.status, stats: u.base, resources: u.resources,
     conditions: u.conditions, pos: u.pos, cell: field && u.pos !== undefined ? cellLabel(field, u.pos) : undefined,
+    platform:u.platform, seats:u.seats, ride:u.ride && {platformId:u.ride.platformId,mode:u.ride.mode},
     formationPosition: u.formationPosition, airborne: u.airborne, elevation: u.elevation,
     weapon: u.weapon && { name: u.weapon.name, range: u.weapon.range, minRange: u.weapon.minRange },
     sidearm: u.sidearm && { name: u.sidearm.name, range: u.sidearm.range },
@@ -55,7 +58,7 @@ function unitView(u: Combatant, b: Battle | null) {
 /** Domain state, independent of selected tab, map mode, dialog or DOM controls. */
 export function playerGameState(runtime: McpGameRuntime, args: Record<string, unknown> = {}) {
   const b = runtime.battle();
-  const visible = b ? b.rules.resolutionVersion === 'v2' ? b.visibleCombatants('ally') : b.combatants : runtime.roster();
+  const visible = b instanceof SmallBattle ? b.rosterInView('ally') : b ? b.rules.resolutionVersion === 'v2' ? b.visibleCombatants('ally') : b.combatants : runtime.roster();
   const known = new Set(visible.map(u => u.id));
   const actor = visible.find(u => u.side === 'ally' && u.id === args.actorId)
     ?? (b instanceof SmallBattle ? visible.find(u => u.side === 'ally' && u.id === b.active?.id) : visible.find(u => u.side === 'ally' && u.status === 'ready'));
@@ -79,7 +82,7 @@ export function playerGameState(runtime: McpGameRuntime, args: Record<string, un
     ...(b instanceof SmallBattle && actor ? {
       economy: b.getTurnEconomy(actor.id), movementLeft: field ? b.movementLeft(actor.id) : undefined,
       reachable: field ? b.reachableCells(actor.id).map(p => ({ cell: p.cells.at(-1), label: cellLabel(field, p.cells.at(-1)!), cost: p.cost })) : undefined,
-      options,
+      options, transport: b.platforms.options(actor),
       auxiliaryActions: ['overwatch','reload','suppress','takeoff','land','climb','structure','gate','haste','auto'],
     } : {}),
     ...(b instanceof MassBattle ? {
@@ -118,9 +121,10 @@ export function gameCell(b: SmallBattle, value: unknown): number {
 export function executeSmallGameAction(b: SmallBattle, actorId: string, a: GameAction): void {
   const actor = b.combatants.find(u => u.id === actorId && u.side === 'ally');
   if (!actor || b.active?.id !== actorId || actor.status !== 'ready' || b.isOver()) throw Error('该我方单位当前不能行动，后续步骤已停止');
-  if (a.targetId && !a.targetId.startsWith('cell:') && !b.visibleCombatants('ally').some(u => u.id === a.targetId)) throw Error('目标不在玩家可见范围内');
+  if (a.targetId && a.targetId !== actorId && !a.targetId.startsWith('cell:') && !b.rosterInView('ally').some(u => u.id === a.targetId)) throw Error('目标不在玩家可见范围内');
   const target = () => { if (!a.targetId) throw Error('请提供 targetId'); return a.targetId; };
   switch (a.type) {
+    case 'board': case 'leave': case 'merge': case 'select-platform': b.platforms.act(actor,a.type === 'select-platform' ? 'select' : a.type,target(),a.count); break;
     case 'move':
       if (b.battlefield) b.moveTo(actorId, gameCell(b, a.cell));
       else { if (a.direction !== 'advance' && a.direction !== 'withdraw') throw Error('此战场的移动指令需要 direction'); b.move(actorId, a.direction); }
@@ -135,7 +139,7 @@ export function executeSmallGameAction(b: SmallBattle, actorId: string, a: GameA
     }
     case 'brace': b.brace(actorId); break;
     case 'overwatch': b.setOverwatch(actorId); break;
-    case 'reload': b.reloadWeapon(actorId, a.weaponMode === 'sidearm'); break;
+    case 'reload': b.reloadWeapon(actorId,a.weaponMode as WeaponMode | undefined); break;
     case 'suppress': b.suppress(actorId, target()); break;
     case 'retreat': b.retreat(actorId); if (!b.battlefield) b.endTurn(); break;
     case 'takeoff': b.changeFlight(actorId, true); break;
@@ -224,7 +228,7 @@ export class McpGameApi {
             if (!Array.isArray(args.orders) || args.orders.length > 64) throw Error('orders 须为不超过64条的列表');
             await this.runtime.orders(args.orders as Order[], args.resolve !== false); current.completedSteps = 1;
           } else {
-            if (!Array.isArray(args.unitIds) || !args.unitIds.length || args.unitIds.length > 64 || args.unitIds.some(id => typeof id !== 'string')) throw Error('unitIds 须包含1—64个档案 ID');
+            if (!Array.isArray(args.unitIds) || !args.unitIds.length || args.unitIds.some(id => typeof id !== 'string' || !id)) throw Error('unitIds 须包含要恢复的档案 ID');
             await this.runtime.recover(args.unitIds as string[], args.deploy !== false); current.completedSteps = 1;
           }
         });

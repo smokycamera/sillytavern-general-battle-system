@@ -1,3 +1,4 @@
+import { availableCopies } from '../equipment-batches.js';
 import { agileCost, phase2Value } from '../phase2-traits.js';
 import { stackingRevision } from '../progression.js';
 import { collectMods, resolveStack, type ResolveContext, type Modifier } from '../bonus.js';
@@ -67,12 +68,29 @@ export function waterOnly(actor: Combatant): boolean {
     || actor.rulesVersion === 'v2' && !!actor.traitSources?.some(source => source.traitIds.includes('sailing') && traitSourceActive(actor, source));
   return sailing && !activeTraitIds(actor).includes('water-crossing');
 }
+export function terrainExposure(field: BattlefieldSpec, cell: number | undefined, actor: Combatant): '落水' | '真空暴露' | undefined {
+  if (!field.exposureRules || cell === undefined || actor.ride) return;
+  const tile = field.tiles[cell];
+  if (tile === 'vacuum') return activeTraitIds(actor).includes('space-adapted') ? undefined : '真空暴露';
+  if (tile === 'deep_water' && !isAirborne(actor) && !isElevated(actor) && intactStructure(field, cell)?.kind !== 'bridge'
+    && !activeTraitIds(actor).some(id => id === 'sailing' || id === 'water-crossing')) return '落水';
+}
+export function spaceRock(field: BattlefieldSpec, cell: number): boolean {
+  return field.tiles[cell] === 'cliff' && field.environment?.includes('cosmos') === true;
+}
 export function sailingBlocked(field: BattlefieldSpec, cell: number, actor?: Combatant): boolean {
-  return !!actor && waterOnly(actor) && (actor.elevation === 1 || !['deep_water', 'shallow_water'].includes(field.tiles[cell] ?? ''));
+  if (!actor || !waterOnly(actor)) return false;
+  const tile = field.tiles[cell];
+  if (tile === 'vacuum' && (activeTraitIds(actor).includes('space-adapted') || terrainExposure(field,actor.pos,actor) === '真空暴露')) return false;
+  return actor.elevation === 1 || tile !== 'deep_water' && tile !== 'shallow_water';
 }
 export function groundBlocked(field: BattlefieldSpec, cell: number, actor?: Combatant): boolean {
   if (!Number.isInteger(cell) || cell < 0 || cell >= field.tiles.length) return true;
-  if (sailingBlocked(field, cell, actor)) return true;
+  if (spaceRock(field, cell) || sailingBlocked(field, cell, actor)) return true;
+  if (actor) {
+    const hazard = terrainExposure(field, cell, actor);
+    if (hazard) return terrainExposure(field, actor.pos, actor) !== hazard;
+  }
   if (actor && isAirborne(actor)) return false;
   if (actor && isElevated(actor)) return !supportsPlatform(field, cell);
   const s = intactStructure(field, cell), t = field.tiles[cell];
@@ -90,8 +108,8 @@ export function obstructionHeight(field: BattlefieldSpec, cell: number): number 
 }
 export function layerMoveCost(field: BattlefieldSpec, cell: number, actor?: Combatant): number | undefined {
   if (!field.layerVersion) return undefined;
-  if (sailingBlocked(field, cell, actor)) return Infinity;
-  if (actor && (isAirborne(actor) || isElevated(actor))) return 1;
+  if (spaceRock(field, cell) || sailingBlocked(field, cell, actor)) return Infinity;
+  if (actor && (isAirborne(actor) || isElevated(actor))) return field.exposureRules && groundBlocked(field,cell,actor) ? Infinity : 1;
   const s = intactStructure(field, cell), t = field.tiles[cell], overlays = field.overlays?.[cell] ?? [];
   const traits = actor ? activeTraitIds(actor) : [];
   if (groundBlocked(field, cell, actor)) return Infinity;
@@ -182,7 +200,7 @@ export function weaponBreachBudget(actor: Combatant, weapon: Weapon | undefined,
   const enhancement = instanceMultiplier(weapon.recipe?.bonuses, 'damage', weapon.recipe?.variance, weapon.channel ?? 'kinetic');
   const engineers = activeTraitIds(actor).includes('siege-breaker') ? phase2Value(actor, 'siege-breaker', 'engineerDamage', 1.5) : 1;
   const traits = stackingRevision(actor) ? structureTraitMultiplier(actor,weapon,context) : engineers;
-  const frontage = actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1;
+  const frontage = Math.min(availableCopies(actor,weapon.id),actor.scale === 'company' ? Math.min(3, Math.max(1, Math.sqrt(Math.max(0, actor.hp) / 10))) : 1);
   // Strong arms help melee demolition, not firearm/explosive projectile energy.
   const strength = ranged ? 1 : bodyProfile(actor.body, actor.damageModel).strength;
   const summonedShare = mechanism === 'summon' ? Math.min(1, weapon.damageScale ?? 1) : 1;

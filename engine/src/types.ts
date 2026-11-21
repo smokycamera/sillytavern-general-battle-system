@@ -156,6 +156,7 @@ export interface Ability {
   itemScaling?: 'member' | 'object';
   /** 编队本次齐用实际消耗的件数；只存在于单次使用的派生行动，不写入存档。 */
   itemDoses?: number;
+  equipmentDoses?: number;
   definitionId?: string;
   sourceId?: string;
   cooldownGroup?: string;
@@ -303,7 +304,22 @@ export interface BarrierState extends BarrierGrant {
   grants?: BarrierGrant[];
 }
 
+export interface EquipmentBatch {
+  id: string;
+  qty: number;
+  slot: import('./items.js').EquipmentSlot;
+  mechanics: import('./items.js').ItemMechanics;
+  reloading?: { turns: number; count: number }[];
+  shieldDurability?: { remaining: number };
+  energyShield?: { remaining: number; overloaded: number };
+}
 export interface Combatant {
+  equipmentBatches?: EquipmentBatch[];
+  /** Compatibility with archives that stored carried equipment weight. */
+  reserveEquipmentLoad?: number;
+  equipmentPersonnel?: number;
+  /** Wounded personnel whose kit has already been returned at settlement. */
+  unequippedWounded?: number;
   /** Battle-local receipt; even entry without a barrier spends this battle's grant. */
   wornBarrierUsed?: true;
   regenerationModel?: import('./regeneration-model.js').RegenerationModel;
@@ -411,6 +427,10 @@ export interface Combatant {
   carriedItems?: import('./items.js').CarriedItem[];
   summonerId?: string;
   bornRound?: number;
+  transportOrigin?: string;
+  transportReadyRound?: number;
+  /** A survivor who took an emergency step cannot move again this round. */
+  escapeStepRound?: number;
   suppression?: number;
   rulesVersion?: 'v2';
   body?: BodyKind;
@@ -418,6 +438,9 @@ export interface Combatant {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
+  platform?: import('./platforms.js').Platform;
+  seats?: number;
+  ride?: import('./platforms.js').Ride;
   shield?: { id: string; name?: string; load: number; loadOverride?: boolean; recipe?: ItemRecipe; powerScale?: number };
   preparedAbilityIds?: string[];
   generationWarnings?: string[];
@@ -493,6 +516,7 @@ export interface GenAudit {
 // ---------- 造怪器 ----------
 
 export interface GenerateInput {
+  unarmed?: boolean;
   loadModel?: import('./load-model.js').LoadModel;
   numericModel?: import('./numeric-model.js').NumericModel;
   /** Omitted for historical API compatibility; the current panel explicitly selects V6. */
@@ -510,6 +534,9 @@ export interface GenerateInput {
   speedTier?: number;
   /** 明确骑乘平台；专长本身不会创建坐骑或增加人员/生命。 */
   mount?: boolean;
+  platform?: import('./platforms.js').Platform;
+  seats?: number;
+  ride?: import('./platforms.js').Ride;
   quality?: number;
   hp?: number;
   hpMax?: number;
@@ -570,7 +597,7 @@ export interface GenerateInput {
 }
 
 export type DamageChannel = 'kinetic' | 'thermal' | 'arcane';
-export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant';
+export type BodyKind = 'human' | 'large' | 'vehicle' | 'giant' | import('./vehicle-size.js').VehicleSize;
 /** 规范化且冻结的 T/P/S/Q/F 中装备职责；训练 T 不在装备配方中。 */
 export interface ItemRecipe {
   loadModel?: import('./load-model.js').LoadModel;
@@ -609,6 +636,8 @@ export type LogKind =
   | 'battle-end';
 
 export interface BattleLogEntry {
+  volley?: { action:number; mode:import('./equipment-batches.js').VolleyMode; weapon:string };
+  transport?: boolean;
   /** Actual execution feedback; temporary budget limits do not invalidate a route. */
   intentFailure?: { unitId: string; cell?: number; temporary: boolean };
   /** 消息与交涉须保留原话，不按战斗效果精简。 */
@@ -685,6 +714,7 @@ export interface RulePack {
   commandModel?: 'command-v2';
   /** V24 统率范围按有效特质等级成长；旧战斗保留固定范围。 */
   commandRangeModel?: 'graded-v1';
+  spaceManeuverFlight?: true;
   revivalModel?: 'revival-v1';
   flightModel?: 'maneuver-v1';
   enhancementModel?: 'channels-life-v1';
@@ -696,6 +726,9 @@ export interface RulePack {
   damageStackModel?: 'additive-positive-v1';
   criticalDamageScale?: number;
   wornBarrierModel?: 'entry-once-v1';
+  casualtyModel?: 'individual-v1';
+  rescueAtZero?: true;
+  initiativeModel?: 'seeded-ties-v1';
   /** V15 道具系统：专精十级、道具行动与编队件数、AI 保留价值、冲锋与远程看实际配装; absent keeps V14. V20 items-v2：佩戴修正按道具 L 换算。 */
   itemModel?: 'items-v1' | 'items-v2';
   /** V16 新增特质分级；独立于 V15 五项专精。 */

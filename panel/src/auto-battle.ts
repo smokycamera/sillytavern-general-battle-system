@@ -1,3 +1,10 @@
+import { SmallBattle, type MassBattle } from '../../engine/src/index.js';
+
+export function battleProgress(battle: SmallBattle | MassBattle): string {
+  const slot = battle instanceof SmallBattle ? battle.turnOrder[battle.turnIndex] : '';
+  return JSON.stringify([battle.round,slot,battle.diplomacy.revision]);
+}
+
 /** 每次只推进一个激活/会战回合，把控制权交回界面以便关闭开关。 */
 export class AutoBattleLoop {
   private timer?: ReturnType<typeof setTimeout>;
@@ -16,11 +23,12 @@ export class AutoBattleLoop {
     const tick = () => {
       this.timer = undefined;
       if (!this.enabled) return;
+      const started = performance.now();
       const finish = (keepGoing: boolean) => {
         if (epoch !== this.epoch) return;
         if (!keepGoing) this.stop();
         changed();
-        if (this.enabled && epoch === this.epoch) this.timer = setTimeout(tick, 250);
+        if (this.enabled && epoch === this.epoch) this.timer = setTimeout(tick, Math.max(0, 250 - (performance.now() - started)));
       };
       const reject = (error: unknown) => { if (epoch !== this.epoch) return; this.stop(); failed(error); changed(); };
       try { const result = step(); if (typeof result === 'boolean') finish(result); else void result.then(finish, reject); }

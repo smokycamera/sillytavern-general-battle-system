@@ -1,3 +1,4 @@
+import { batchWeapons, startBatchReload, advanceBatchReload } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { grantEntryWornBarrier, resetWornBarrier } from '../worn-barrier.js';
 import { prepareRevivalBattle, tryRevive } from '../revival.js';
@@ -9,7 +10,7 @@ import { canSpot } from '../observation.js';
 import { ACTIVATION_CONTROLS, validateBattleControlState, controlReactionAllowed, controlPolicy, beginControlActivation, finishControlActivation, reconcileBattleControls, breakCharmOnDamage } from '../battle-control.js';
 import { attackHostile, combatHostile, combatSide, controlActionReason, controlCondition } from '../battle-control.js';
 import { healingEffectGroups } from '../healing.js';
-import { spendAbility, abilityUsed } from '../ability-state.js';
+import { spendAbility, abilityUsed, abilityUseLimit } from '../ability-state.js';
 import { itemUseLog, captureItemEffects, type ItemUseLog } from '../item-use-log.js';
 import { assertBattleCapacity } from '../battle-limits.js';
 import { tacticalSkillCost, tacticalRestValue } from '../skill-economy.js';
@@ -41,7 +42,7 @@ import { skillWeapon, skillResourceChange, conjureSkillUnit, conjuredTemplate, s
 import { applySkillTrait } from '../skill-effects.js';
 import { BattleFeedback, type FeedbackUnit } from '../battle-feedback.js';
 import { restoreMassReport, type MassRoundReport, type MassPhase } from './feedback.js';
-import { skillAttack } from '../skill-attack.js';
+import { chargedAction, skillAttack } from '../skill-attack.js';
 import { prepareCondition, applySkillCondition, dispelCandidates, applyDispel, pushPreview, pushStrength, skillEffectLines, areaSkillEffectLines, skillEffectValue, summonValue, conditionChance } from '../skill-effects.js';
 import { applyWeaponConditions, poisonDamage, poisonFactor, conditionDamage, conditionDamageSources } from '../afflictions.js';
 import { isRangedWeapon, meleeWeapon, weaponReloadKey, weaponReloadTurns, validateMount, mountedShooting, mobileRangedWeapon, vehicleShooting } from '../loadout.js';
@@ -198,6 +199,8 @@ export class MassBattle {
     this.hasteOrders.set(unitId, { unitId, type: order.type, targetId: order.targetId, abilityId: order.abilityId, abilityActorId: order.abilityActorId, haste: true });
   }
   private reloadOrder(actor: Combatant): void {
+    const batch = actor.equipmentBatches?.find(b=>b.reloading?.length);
+    if (batch) { advanceBatchReload(batch); return; }
     const weapon = [actor.weapon, actor.sidearm].filter(w => w && (this.reloadCd.get(weaponReloadKey(actor, w)) ?? 0) > 0)
       .sort((a,b) => (this.reloadCd.get(weaponReloadKey(actor, b)) ?? 0) - (this.reloadCd.get(weaponReloadKey(actor, a)) ?? 0))[0];
     if (!weapon) return;
@@ -237,7 +240,11 @@ export class MassBattle {
     this.roundLimit = opts.roundLimit ?? 40;
     this.combatants = opts.combatants;
     this.xpMinimum = initialXpStrength(this.combatants);
-    this.xpInitialStrength = initialXpStrength(this.combatants);
+    this.xpInitialStrength = new Map(this.xpMinimum);
+    for (const unit of this.combatants) if (unit.transportOrigin) {
+      const original = this.xpInitialStrength.get(unit.transportOrigin) ?? 0;
+      this.xpInitialStrength.set(unit.transportOrigin, original + (this.xpMinimum.get(unit.id) ?? 0));
+    }
     for (const unit of this.combatants) unit.nonLethal = this.nonLethal;
     for (const unit of this.combatants) { calibrateAutocannon(unit.weapon); calibrateAutocannon(unit.sidearm); calibrateWeaponHands(unit.weapon); calibrateWeaponHands(unit.sidearm); }
     for (const unit of this.combatants) { validateConcealment(unit.tacticalRevealed); validateVanguardOrigin(unit.vanguardOrigin, unit.side); }
@@ -255,11 +262,11 @@ export class MassBattle {
       ...FATIGUE_TIER_DEFS,
       ...(opts.extraConditions ?? []),
     ]);
-    for (const u of this.combatants) if (u.airborne && flightMaintenanceReason(u, this.conditions)) throw new Error('空中存档记录缺少可维持的飞行能力');
+    this.fieldTags = this.rules.resolutionVersion === 'v2' ? environmentTags(opts.field?.tags) : opts.field?.tags ?? [];
+    for (const u of this.combatants) if (u.airborne && flightMaintenanceReason(u, this.conditions, this)) throw new Error('空中存档记录缺少可维持的飞行能力');
     this.traitRegistry = opts.traitRegistry ?? (this.rules.resolutionVersion === 'v2' ? defaultTraitRegistry() : new Map());
     this.zones = opts.zones;
     this.commanderId = opts.commanderId;
-    this.fieldTags = this.rules.resolutionVersion === 'v2' ? environmentTags(opts.field?.tags) : opts.field?.tags ?? [];
     this.summonUnit = opts.summonUnit;
   }
 
@@ -289,12 +296,12 @@ export class MassBattle {
     for (const unit of units) {
       const node = formationNode(unit); if (node.side !== unit.side) throw new Error('开战部署不能位于敌方阵位');
       if (this.rules.resolutionVersion === 'v2') {
-        if (unit.airborne === undefined && !flightCapabilityReason(unit, this.conditions)) unit.airborne = true;
-        if (hasFlightAbility(unit) && unit.formationPosition === undefined) unit.formationPosition = node.id;
+        if (unit.airborne === undefined && !flightCapabilityReason(unit, this.conditions, this)) unit.airborne = true;
+        if (hasFlightAbility(unit, this) && unit.formationPosition === undefined) unit.formationPosition = node.id;
       }
     }
     const attached = new Map<string, string>();
-    for (const hero of units.filter(u => this.rules.resolutionVersion === 'v2' && needsFormationHost(u)).sort((a, b) => a.id.localeCompare(b.id))) {
+    for (const hero of units.filter(u => this.rules.resolutionVersion === 'v2' && needsFormationHost(u, this)).sort((a, b) => a.id.localeCompare(b.id))) {
       const hosts = units.filter((u) => u.side === hero.side && u.scale !== 'hero' && u.status === 'ready' && !attached.has(u.id) && (!isAirborne(u) || (u.body ?? 'human') !== 'human'));
       const host = hosts.sort((a, b) => formationDistance(hero, a) - formationDistance(hero, b) || a.id.localeCompare(b.id))[0];
       if (!host) {
@@ -330,7 +337,7 @@ export class MassBattle {
   private flightOrderReason(unit: Combatant, airborne: boolean, units = this.combatants): string | undefined {
     if (isAirborne(unit) === airborne) return airborne ? '已经在空中' : '已经在地面';
     if (airborne) {
-      const reason = flightCapabilityReason(unit, this.conditions); if (reason) return reason;
+      const reason = flightCapabilityReason(unit, this.conditions, this); if (reason) return reason;
       if (this.attached.has(unit.id) && (unit.body ?? 'human') === 'human') return '该飞行编队不能承载随队者升空';
     }
     if (!formationCanOccupy(units, { ...unit, airborne }, formationNode(unit), this.attached, this.formationSlots ?? 3)) return '同层落点容量不足或有敌方占位';
@@ -367,9 +374,9 @@ export class MassBattle {
     const affected = structuredClone(target), controls = ability.effects.filter((e): e is Extract<Ability['effects'][number], { op: 'condition' }> =>
       e.op === 'condition' && !!(this.conditions.get(e.conditionId)?.skipTurn || this.conditions.get(e.conditionId)?.preventMove) && conditionChance(target, e) > 0);
     for (const effect of healingEffectGroups(ability)) if (effect.op === 'dispel') applyDispel(affected, dispelCandidates(affected, effect));
-    const dispelled = !!flightMaintenanceReason(affected, this.conditions);
+    const dispelled = !!flightMaintenanceReason(affected, this.conditions, this);
     affected.conditions.push(...controls.map((e) => ({ id: e.conditionId, dur: e.dur })));
-    if (!flightMaintenanceReason(affected, this.conditions)) return undefined;
+    if (!flightMaintenanceReason(affected, this.conditions, this)) return undefined;
     const damage = ability.effects.find((e) => e.op === 'damage');
     const known = this.visibleCombatants(actor.side, units);
     const preview = damage ? this.previewAttackWithEnvironment({ attacker: actor, defender: target, rules: this.rules, conditionDefs: this.conditionMap(), traitRegistry: this.traitRegistry, ...this.skillAttackOptions(known, actor, target, ability, damage) }, known) : undefined;
@@ -385,7 +392,7 @@ export class MassBattle {
   private resolveFlightStates(): void {
     const fallen: Combatant[] = [];
     for (const unit of [...this.combatants].sort((a, b) => a.id.localeCompare(b.id)).filter(isAirborne)) {
-      const reason = flightMaintenanceReason(unit, this.conditions); if (!reason) continue;
+      const reason = flightMaintenanceReason(unit, this.conditions, this); if (!reason) continue;
       const outcome = this.landingOutcome(unit), source = this.combatants.find((u) => u.id === this.flightCauses.get(unit.id));
       unit.formationPosition ??= formationNode(unit).id; unit.airborne = false; delete unit.tacticalPose;
       if (outcome.landing) setFormation(unit, outcome.landing);
@@ -475,7 +482,7 @@ export class MassBattle {
   }
   private takeoffReactions(actor: Combatant, spent: Set<string>): void {
     for (const foe of this.takeoffThreats(actor).sort((a, b) => a.id.localeCompare(b.id))) {
-      if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions)) break;
+      if (actor.status !== 'ready' || flightCapabilityReason(actor, this.conditions, this)) break;
       const weapon = meleeWeapon(foe);
       if (!controlReactionAllowed(foe, actor, this.combatants, formationDistance(foe,actor)) || !combatHostile(foe, actor, this.combatants) || foe.status !== 'ready' || this.isAttached(foe.id) || isAirborne(foe) || formationDistance(foe, actor) > 1 || !weapon || foe.suppression || spent.has(foe.id)
         || foe.conditions.some((c) => this.conditions.get(c.id)?.skipTurn || this.conditions.get(c.id)?.preventAttack && baseMechanism(meleeWeapon(foe)) !== 'natural')) continue;
@@ -503,7 +510,7 @@ export class MassBattle {
       const actor = this.byId(id);
       if (plan.airborne && !isAirborne(actor)) {
         exertion.set(id, formationMarchCost(actor, this.fieldTags)); this.takeoffReactions(actor, reactions);
-        if (flightCapabilityReason(actor, this.conditions)) { plans.delete(id); this.recordEvent({ round: this.round, kind: 'move', participants: [id], text: `${actor.name} 起飞被反应中断，主任务已使用` }); }
+        if (flightCapabilityReason(actor, this.conditions, this)) { plans.delete(id); this.recordEvent({ round: this.round, kind: 'move', participants: [id], text: `${actor.name} 起飞被反应中断，主任务已使用` }); }
       }
     }
     this.pruneArrivals(plans);
@@ -524,7 +531,7 @@ export class MassBattle {
     }
   }
   private rangedWeaponFor(actor: Combatant, target: Combatant, units = this.combatants, mobileOnly: false | 'riding' | 'vehicle' = false) {
-    const weapons = [actor.weapon, actor.sidearm].filter((weapon) =>
+    const weapons = batchWeapons(actor).filter((weapon) =>
       isRangedWeapon(weapon) && !armsWeaponReason(actor,weapon) && (!mobileOnly || (mobileOnly === 'riding' ? mobileRangedWeapon(weapon) : vehicleShooting(actor, weapon))) && !(this.reloadCd.get(weaponReloadKey(actor, weapon)) ?? 0)
       && !formationShotReason({ ...actor, weapon }, target, units.filter((u) => !this.isAttached(u.id)))
       && !rangedScreen(actor, target, weapon, units.filter(u => !this.isAttached(u.id)), { mode: 'mass' }, this.conditionMap()));
@@ -634,7 +641,7 @@ export class MassBattle {
     const aerial = aerialTargetReason(u, target, order.type === 'volley'); if (aerial) return aerial;
     if (order.type === 'volley') {
       if (this.rangedWeaponFor(u, target, units) || this.mountedShotDestination(u, target, this.visibleCombatants(u.side, units)) || this.vehicleShotDestination(u, target, this.visibleCombatants(u.side, units))) return undefined;
-      const rangedWeapons = [u.weapon, u.sidearm].filter(isRangedWeapon);
+      const rangedWeapons = batchWeapons(u).filter(isRangedWeapon);
       if (rangedWeapons.length && rangedWeapons.every(w => armsWeaponReason(u,w))) return armsWeaponReason(u,rangedWeapons[0]);
       if (rangedWeapons.length && rangedWeapons.every((w) => (this.reloadCd.get(weaponReloadKey(u, w)) ?? 0) > 0)) return '武器装填中';
       const weapon = rangedWeapons.find((w) => !armsWeaponReason(u,w) && !(this.reloadCd.get(weaponReloadKey(u, w)) ?? 0)) ?? u.weapon;
@@ -799,7 +806,7 @@ export class MassBattle {
   itemUse(actor: Combatant, ability: Ability, target?: Combatant, units = this.combatants): ReturnType<typeof itemUseAbility> {
     const healingTargets = target && ability.itemSourceId && (ability.area || ability.shape === 'burst') && ability.effects.every(e => e.op === 'heal')
       ? this.supportTargets(actor, ability, target, units) : undefined;
-    return itemUseAbility(actor, ability, target, healingTargets);
+    return itemUseAbility(actor, chargedAction(this.observationContext(units),actor,target,ability), target, healingTargets);
   }
   private supportTargets(actor: Combatant, ability: Ability, primary: Combatant, units: Combatant[]): Combatant[] {
     const valid = (u: Combatant) => !this.isAttached(u.id)
@@ -1142,7 +1149,7 @@ export class MassBattle {
       const gain = u.resourceModel ? tacticalRestValue(context, u) : (futureValue(rested) - futureValue(u)) * 1.5;
       if (gain > 0) candidates.push({ order: { unitId: u.id, type: 'hold' }, score: gain });
     }
-    if (hasFlightAbility(u) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
+    if (hasFlightAbility(u, this) || isAirborne(u) || isRangedWeapon(u.weapon) || isRangedWeapon(u.sidearm)) {
       const pinnedRanged = isRangedWeapon(u.weapon) && foes.some(target => {
         const volley: Order = { unitId: u.id, type: 'volley', targetId: target.id };
         return this.v2OrderReason(volley, planning)?.includes('牵制');
@@ -1472,7 +1479,7 @@ export class MassBattle {
           const result = this.resolveAttackWithEnvironment({ ...this.orderAttackOptions(order, phaseUnits, false, weapon), actionDamageScale: order.haste ? hasteAttackScale(actor) : 1, defender: structuredClone(target), rng: this.rng });
           results.push({ actorId: actor.id, targetId: target.id, result });
         }
-        if (weaponReloadTurns(weapon) && order.type === 'volley') this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
+        if (weaponReloadTurns(weapon) && order.type === 'volley' && !startBatchReload(this.byId(actor.id),weapon,results.at(-1)?.result.participants ?? 1,weaponReloadTurns(weapon)+1)) this.reloadCd.set(weaponReloadKey(actor, weapon), weaponReloadTurns(weapon) + 1);
         if (isSprayer(weapon)) spendSprayerFuel(this.byId(actor.id), weapon);
       }
       for (const { actorId, targetId, result } of results) {
@@ -1570,7 +1577,7 @@ export class MassBattle {
         if (move.node) { relocate(move.node, move.mode === 'dash' ? move.charge ? '冲锋突进' : '突进' : '闪现'); actor = { ...actor, formationPosition: move.node.id }; }
         const charge = !!move.charge;
         const skillArm = ability.weaponUse ? skillWeapon(actor, ability, formationDistance(actor, target)) : undefined;
-        if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm)) this.reloadCd.set(weaponReloadKey(actor, skillArm), weaponReloadTurns(skillArm) + 1);
+
         for (const effect of healingEffectGroups(ability)) {
           if (effect.op === 'zone') { changes.push(()=>{
             const zone = placeZone(this.observationContext(),this.byId(actor.id),target,effect,this.round,ability.id);
@@ -1652,6 +1659,9 @@ export class MassBattle {
         if (moveEffects(ability).after) { const back = this.skillWithdrawNode(actor, support); if (back) relocate(back, '后撤'); }
         exertion.set(actor.id, skillExertion(actor, ability) + (charge ? 1 : 0));
         this.recordEvent({ round: this.round, kind: 'ability', participants: [actor.id], text: `${actor.name} 的【${ability.name}】占用所属编队${order.haste ? '加速任务' : '本轮主任务'}` });
+        if (skillArm && isRangedWeapon(skillArm) && weaponReloadTurns(skillArm) &&
+          !startBatchReload(actualActor,skillArm,Math.max(1,...[...hits.values()].map(r=>r.participants??1)),weaponReloadTurns(skillArm)+1))
+          this.reloadCd.set(weaponReloadKey(actor,skillArm),weaponReloadTurns(skillArm)+1);
         trackEffects();
       }
       changes.forEach((apply) => apply());
@@ -1782,7 +1792,7 @@ export class MassBattle {
         }
         this.lastReport = structuredClone(this.pendingReport);
       }
-      this.orders.clear(); this.hasteOrders.clear(); this.resolvedRounds.add(this.round); this.round++; for (const unit of this.combatants) beginArmsActivation(unit);
+      this.orders.clear(); this.hasteOrders.clear(); this.resolvedRounds.add(this.round); this.round++; for (const unit of this.combatants) { for (const batch of unit.equipmentBatches ?? []) advanceBatchReload(batch); beginArmsActivation(unit); }
       for (const unit of this.combatants) beginLifestealRound(unit, this.round);
       this.refreshCp();
       this.recordEvent({ round: this.round - 1, kind: 'round', text: this.lastPhases.join(' → ') });
@@ -1803,7 +1813,7 @@ export class MassBattle {
     return this.combatants.filter((c) => c.side === side && c.status === 'ready');
   }
 
-  start(): void {
+  start(deploymentEvents: readonly BattleLogEntry[] = []): void {
     for (const unit of this.combatants) delete unit.regenerationRemainder;
     if (this.started) return;
     for (const unit of this.combatants) { prepareRevivalBattle(unit, true); resetWornBarrier(unit); }
@@ -1812,6 +1822,7 @@ export class MassBattle {
     this.started = true;
     if (isArmsV2(this.rules.armsModel)) for (const u of this.combatants) if (u.shield && !shieldUsable(u) && u.shieldDurability?.remaining !== 0) this.recordEvent({round:1,kind:'condition',participants:[u.id],text:u.name+'的'+(u.shield.name??'盾牌')+'挂在背上'});
     this.round = 1;
+    for (const event of deploymentEvents) this.recordEvent(event);
     for (const unit of this.combatants) { const text = grantEntryWornBarrier(unit, this.rules); if (text) this.recordEvent({round:1,kind:'condition',participants:[unit.id],text}); }
     for (const unit of this.combatants) beginLifestealRound(unit, this.round, true);
     for (const unit of this.combatants) {
@@ -2204,7 +2215,7 @@ export class MassBattle {
         const st = u.abilityState.find((s) => s.abilityId === a.id) ?? { abilityId: a.id, cdLeft: 0, used: 0 };
         if (!u.abilityState.some((s) => s.abilityId === a.id)) u.abilityState.push(st);
         if (st.cdLeft > 0) continue;
-        if (a.usesPerBattle !== undefined && abilityUsed(u,a) >= a.usesPerBattle) continue;
+        if (a.usesPerBattle !== undefined && abilityUsed(u,a) >= abilityUseLimit(u,a)) continue;
         if (dmg) {
           const foes = this.readyUnits(u.side === 'ally' ? 'enemy' : 'ally');
           if (!foes.length) continue;
@@ -2472,7 +2483,7 @@ export class MassBattle {
     if(this.rules.resolutionVersion==='v2') {
       const earned=casualtyXp(t,this.xpMinimum);
       if(t.side==='enemy')this.xpGained+=earned;
-      const owner=u?.summonerId??u?.id;
+      const owner=u?.summonerId??u?.transportOrigin??u?.id;
       if(owner&&earned&&u?.side!==t.side&&u?.side!=='neutral')this.xpByUnit.set(owner,(this.xpByUnit.get(owner)??0)+earned);
     }
     const revival = tryRevive(t);

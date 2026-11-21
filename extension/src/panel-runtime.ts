@@ -7,9 +7,12 @@ import { NativeMessages } from '../../host/src/messages.js';
 import type { BattleService } from '../../runtime/src/battle-service.js';
 import { preferences } from './preferences.js';
 import { createWorldbookSource, type WorldbookSource } from '../../host/src/worldbooks.js';
+import type { UiLanguage } from '../../panel/src/ui-language.js';
 
 export interface NativeRuntime {
   service: BattleService;
+  setEnabled?(active: boolean): Promise<void>;
+  setLanguage?(language: UiLanguage): void;
   messages: NativeMessages;
   open(): void;
   close(): void;
@@ -72,11 +75,21 @@ export function createPanelRuntime(): PanelRuntime {
   };
   return { adapter, controller, resident: true, native: true,
     worldbooks,
+    isEnabled: service.enabled, setEnabled: runtime.setEnabled,
     recentNarrative: () => {
       const count = host.context().chat?.length ?? 0;
       return Array.from({length: Math.min(count, 100)}, (_, i) => host.message(count - Math.min(count, 100) + i)).flatMap(m => m ? [{ id: m.messageId + ':' + m.swipeId, role: m.role, text: m.text, completed: m.complete }] : []);
     },
     getTheme: () => display.read().theme ?? 'dark', setTheme: theme => display.write({ theme }),
+    getLanguage: () => display.read().language ?? 'zh-CN', setLanguage: runtime.setLanguage,
+    async persistBattleTurn(turn, revision) {
+      panelCommit++;
+      try {
+        const result = await service.persistBattleTurn(turn, revision);
+        if (!sameChat(result.receipt.session, host.session())) throw Error('聊天已切换，旧面板操作已停止');
+        return { ...result, receipt: legacyReceipt(result.receipt) };
+      } finally { panelCommit--; }
+    },
     ...(runtime.worldbook ? {
       getWorldbookSettings: () => runtime.worldbook!.view(),
       setWorldbookSettings: (update: WorldbookEditorUpdate) => runtime.worldbook!.update(update),

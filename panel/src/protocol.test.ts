@@ -3,6 +3,19 @@ import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { TRAITS, generateUnit } from '../../engine/src/index.js';
 import { CORE_PROTOCOL, PROMPT_CARDS } from './narrative-prompt.js';
 
+it('accepts English mechanics and mixed-language specs without changing item or unit names', () => {
+  const result = parseProtocol(`<tb>
+    <spawn name="Pilot" side="ally" scale="hero" traits="Space Mobility,飞行L2" armor="Flight Suit:Light Armour L2" shield="Screen:Energy Shield L3" skills="First Aid:Buff L3+Heal L4"/>
+    <reforge id="a1" name="Field Armor" spec="Medium Armor L4+2defense"/>
+  </tb>`);
+  expect(result.errors).toEqual([]);
+  expect(result.events).toMatchObject([
+    { kind: 'spawn', name: 'Pilot', traits: ['space-adapted', 'flyingL2'], armorTier: 1, shieldName: 'Screen', shieldClass: 'energy-shield',
+      skills: [{ name: 'First Aid', level: 3, blueprintId: 'generic:buff:heal@4' }] },
+    { kind: 'reforge', name: 'Field Armor', spec: { kind: 'armor', tier: 2, power: 4, bonuses: { defense: 2 } } },
+  ]);
+});
+
 it('spawn neutral retains third-party ownership through parsing and generation', () => {
   const parsed = parseProtocol('<tb><spawn name="第三军" side="neutral" scale="hero"/></tb>');
   expect(parsed.errors).toEqual([]);
@@ -39,7 +52,7 @@ it('思考区示例不计入正文块，支持标签显示转义和缩进，原�
   expect(parseProtocol('<think>' + block).events).toEqual([]);
   expect(parseProtocol(block + block).canonical).toBe(parsed.canonical);
   expect(parseProtocol('<tb><deploy id="d1"/>').events[0]).toMatchObject({ kind: 'deploy', id: 'd1' });
-  expect(parseProtocol("<tb><spawn name='双刃' side='ally' scale='hero' weapon='战刃:剑L7,鞭剑:剑L6'/></tb>").events[0]).toMatchObject({ weaponClass: 'sword', weapon2Class: 'sword', weapon2Level: 6 });
+  expect(parseProtocol("<tb><spawn name='双刃' side='ally' scale='hero' weapon='战刃:剑L7,鞭剑:剑L6'/></tb>").events[0]).toMatchObject({ weaponClass: 'sword', equipmentIssues: {primary:[{name:'战刃', qty:1, spec:{mechanism:'sword', power:7}}, {name:'鞭剑', qty:1, spec:{mechanism:'sword', power:6}}]} });
   expect(parseProtocol('<tb><spawn name="卫兵" side="enemy" scale="hero" weapon="激光枪L3"/></tb>').events[0]).toMatchObject({ weaponClass: 'energy', weaponLevel: 3 });
 });
 
@@ -68,18 +81,15 @@ it('错误盾牌规格定位到shield，不把武器、护甲或道具误当盾�
   }
 });
 
-it('80人按一支编队表达；大量单位、错误count和超长事件整批拒绝，规范短例均可解析', () => {
+it('80人可建为一支编队或80张卡；单次count和单批事件数各自校验', () => {
   expect(parseProtocol('<tb><spawn name="守备连" side="enemy" scale="company" hpMax="80"/></tb>').events[0]).toMatchObject({ count: 1, hpMax: 80 });
-  for (const body of [
-    Array.from({ length: 80 }, (_, n) => `<spawn name="士兵${n}" side="enemy" scale="hero"/>`).join(''),
-    '<spawn name="士兵" side="enemy" scale="hero" count="80"/>',
-    '<spawn name="士兵" side="enemy" scale="hero" count="20"/>'.repeat(4),
-  ]) {
-    const result = parseProtocol('<tb><unit_update id="a" hp="500"/>' + body + '</tb>');
-    expect(result.errors.join('')).toMatch(/编队|人数|单位|事件/);
-  }
+  const cards = (n: number) => Array.from({ length: n }, (_, i) => `<spawn name="士兵${i}" side="enemy" scale="hero"/>`).join('');
+  const many = parseProtocol('<tb>' + cards(80) + '</tb>');
+  expect(many.errors).toEqual([]); expect(many.events).toHaveLength(80);
+  expect(parseProtocol('<tb>' + cards(161) + '</tb>').errors.join('')).toMatch(/160/);
+  expect(parseProtocol('<tb><spawn name="士兵" side="enemy" scale="hero" count="80"/></tb>').errors.join('')).toMatch(/count|卡/);
   const examples = [CORE_PROTOCOL, ...PROMPT_CARDS.map((c) => c.content)].flatMap((text) => text.match(/<tb>(?:\s*<[a-z_]+\s[^<>]*\/>\s*)+<\/tb>/g) ?? []);
-  expect(examples).toHaveLength(8);
+  expect(examples).toHaveLength(11);
   for (const text of examples) expect(parseProtocol(text).errors, text).toEqual([]);
   const effectSection = PROMPT_CARDS.map(c=>c.content).join('\n').match(/## 获得与解除效果\n([\s\S]*?)\n## 特质traits/)![1]!;
   const effectExample = effectSection.slice(effectSection.indexOf('示例：') + '示例：'.length);

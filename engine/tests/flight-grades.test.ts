@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, SmallBattle, MassBattle, standardField, V34_OVERFLOW_D20, V35_OVERFLOW_D20, V35_OVERFLOW_TW,
+import { generateUnit, SmallBattle, MassBattle, standardField, V34_OVERFLOW_D20, V35_OVERFLOW_D20, V35_OVERFLOW_TW, V44_OVERFLOW_D20, V45_OVERFLOW_D20, V45_OVERFLOW_TW,
   flightDefense, traitLevel, grantTraitSource, revokeTraitSource, compileSkill, skillMechanismId, parseSkillMechanism, type Combatant, type RulePack } from '../src/index.js';
 
 function unit(id: string, flying = 0, company = false): Combatant {
@@ -94,4 +94,41 @@ describe('V35 flight maneuver and anti-air grades', () => {
     expect(battle.issue(order).ok).toBe(true); battle.issue({ unitId: d.id, type: 'hold' }); battle.resolveRound();
     expect(battle.log.find(e => e.resolution?.attackerId === a.id)!.resolution!.targetDef).toBe(airborne.preview!.defenseScore);
   });
+});
+
+it('太空机动在非太空按飞行 L1 部署、起降和防御，随环境与存档规则生效', () => {
+  for (const [env, rules, flies] of [
+    ['sea', V45_OVERFLOW_D20, true], ['cosmos', V45_OVERFLOW_D20, false], ['plains', V44_OVERFLOW_D20, false],
+  ] as const) {
+    const pilot = unit('a'), enemy = unit('d');
+    pilot.traits.push('space-adapted');
+    const field = standardField();
+    field.environment = [env];
+    field.tiles.fill('open');
+    field.initialDeployment = { a: { pos: 52, airborne: flies } };
+    const battle = new SmallBattle({ combatants: [pilot, enemy], battlefield: field, rules, seed: 'space-mobility' });
+    battle.start();
+    const saved = SmallBattle.fromSnapshot(structuredClone(battle.toSnapshot()));
+    saved.turnOrder = ['a', 'd']; saved.turnIndex = 0;
+    const actor = saved.byId('a');
+    expect(!!actor.airborne).toBe(flies);
+    if (flies) {
+      expect(flightDefense(enemy, actor, saved)).toBe(3);
+      actor.traits.push('flying'); actor.traitLevels = { flying: 7 };
+      expect(flightDefense(enemy, actor, saved)).toBe(9);
+      actor.traits = actor.traits.filter(trait => trait !== 'flying');
+      saved.changeFlight('a', false);
+      saved.changeFlight('a', true);
+      expect(actor.airborne).toBe(true);
+    } else {
+      expect(saved.flightReason('a', true)).toMatch(/飞行来源/);
+    }
+  }
+  for (const env of ['plains', 'cosmos']) {
+    const pilot = unit('a', 0, true), enemy = unit('d', 0, true);
+    pilot.traits.push('space-adapted');
+    const battle = new MassBattle({ combatants: [pilot, enemy], field: { tags: [env] }, rules: V45_OVERFLOW_TW, seed: 'space-mass' });
+    battle.start();
+    expect(!!pilot.airborne).toBe(env === 'plains');
+  }
 });

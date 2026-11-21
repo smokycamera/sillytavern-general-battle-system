@@ -31,7 +31,7 @@ describe('新增战况与终章的位置', () => {
   it('最新状态写位置与站立高度，并说明高度的含义', () => {
     const b = slope(); b.moveTo('a', 30);
     const state = knownBattleState(b);
-    expect(state).toContain('【最新状态】（高度按层计，约一层楼，0为地面）');
+    expect(state).toContain('【最新状态】');
     expect(state).toContain('我方 a(C5·高度1)：血量'); expect(state).toContain('敌方 b(A1·高度0)：血量');
   });
 
@@ -45,7 +45,7 @@ describe('新增战况与终章的位置', () => {
     const start = captureBattleStart(b, captureBattleArchive({ storage: [], rosterIds: [], inventory: [] }));
     b.moveTo('a', 30); b.finishBattle('ceasefire');
     const text = battleEpilogue(b, start);
-    expect(text).toContain('【战场】\n环境：平原｜高度按层计，约一层楼，0为地面\n地标：北坡 D5（高度2）');
+    expect(text).toContain('【战场】\n环境：平原\n地标：北坡 D5（高度2）');
     expect(text.split('【结束单位状态与血量】')[0]).toContain('我方 a(A5·高度0)：血量');
     expect(text.split('【结束单位状态与血量】')[1]).toContain('我方 a(C5·高度1)：血量');
   });

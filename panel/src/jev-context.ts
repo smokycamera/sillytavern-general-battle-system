@@ -1,6 +1,4 @@
-import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { narrativeIds, type NarrativeIdState } from './narrative-ids.js';
-import { selectSpatialNarrative } from './narrative-map-source.js';
 import {
   deployOnGrid,
   standardField,
@@ -15,7 +13,6 @@ import {
   type NarrativeMessage,
 } from "../../vendor/jev-core/src/index.js";
 import {
-  recommendBattleMode,
   prepareMassRoster,
   type BattleObjectiveMode,
 } from "./battle-setup.js";
@@ -127,9 +124,9 @@ function messageKey(messages: NarrativeMessage[]): string {
     h = Math.imul(h ^ source.charCodeAt(i), 16777619);
   return `${source.length}:${h >>> 0}`;
 }
-function massAvailable(roster: Combatant[]): boolean {
+function massAvailable(roster: Combatant[], field: string): boolean {
   try {
-    prepareMassRoster(roster);
+    prepareMassRoster(roster, [field]);
     return true;
   } catch {
     return false;
@@ -142,18 +139,13 @@ function finishSetup(
   if (input.phase === "battle") return context; // Existing battle geometry and victory rules are immutable.
   if (input.settings.battleMode !== "auto")
     context.mode = input.settings.battleMode;
-  const count = input.roster.filter(u => u.hp > 0 && u.status === 'ready').length;
-  if (count > MAX_SMALL_UNITS) {
-    if (context.mode !== 'mass') context.detail += '；超过32张，采用会战';
-    context.mode = 'mass';
-  }
-  if (context.mode === 'mass' && !massAvailable(input.roster)) {
-    if (count > MAX_SMALL_UNITS) throw Error('会战部署容量或明确阵位无效，请调整部署；不会把超过32张的名单塞回小战');
+  if (context.mode === 'mass' && !massAvailable(input.roster, context.field)) {
+    if (input.settings.battleMode === 'mass') prepareMassRoster(input.roster, [context.field]);
     context.mode = 'small';
     context.detail += '；会战部署不可用，采用小战';
   }
   if (
-    input.settings.battleMode === "auto" && count <= MAX_SMALL_UNITS &&
+    input.settings.battleMode === "auto" &&
     (["siege", "escort", "intercept"].includes(context.objectiveMode) ||
       context.mapLayout === "indoor")
   )
@@ -180,7 +172,7 @@ export function encounterRequest(input: EncounterContextInput): {
     input.messages,
     input.windowSize,
     input.roles,
-  ).map((m) => ({ ...m, text: input.phase==='preparation'?selectSpatialNarrative(m.text):m.text.slice(-6000) }));
+  );
   const key = messageKey(messages);
   const messageKeys = messages.map((m) => messageKey([m]));
   const base: JevEncounterContext = input.previous
@@ -293,7 +285,7 @@ export function encounterRequest(input: EncounterContextInput): {
         options: {
           unknown,
           small: "独立人物、局部遭遇、护送或具体地点争夺",
-          ...(massAvailable(input.roster)
+          ...(massAvailable(input.roster, input.setup.field)
             ? { mass: "可组织成阵列的军团/大规模正面会战" }
             : {}),
         },
@@ -309,6 +301,7 @@ export function encounterRequest(input: EncounterContextInput): {
         siege: "城墙、堡垒或攻城环境",
         forest: "树林/丛林",
         mountain: "山地、山谷或高地",
+        sea: "海洋", cosmos: "太空",
       },
     });
     request.fields.push({
@@ -429,5 +422,5 @@ export function encounterSummary(context: JevEncounterContext): string {
     .filter((d) => Math.abs((context.enemy.style[d.id] ?? 50) - 50) >= 20)
     .map((d) => (context.enemy.style[d.id]! > 50 ? d.high : d.low))
     .slice(0, 4);
-  return `敌方：${ABILITY_LABELS[context.enemy.ability]}${traits.length ? " · " + traits.join(" / ") : " · 均衡"}；${context.mode === "small" ? "小战" : "会战"} · ${{ plains: "野战", urban: "巷战", siege: "攻城", forest: "森林", mountain: "山地" }[context.field] ?? context.field} / ${context.lighting === "night" ? "夜间" : "日间"} · ${{ auto: "默认目标", control: "夺点", annihilation: "歼灭", siege: "攻城夺点", escort: "我方护送", intercept: "拦截敌方" }[context.objectiveMode]}`;
+  return `敌方：${ABILITY_LABELS[context.enemy.ability]}${traits.length ? " · " + traits.join(" / ") : " · 均衡"}；${context.mode === "small" ? "小战" : "会战"} · ${{ plains: "野战", urban: "巷战", siege: "攻城", forest: "森林", mountain: "山地", sea: "海洋", cosmos: "太空" }[context.field] ?? context.field} / ${context.lighting === "night" ? "夜间" : "日间"} · ${{ auto: "默认目标", control: "夺点", annihilation: "歼灭", siege: "攻城夺点", escort: "我方护送", intercept: "拦截敌方" }[context.objectiveMode]}`;
 }

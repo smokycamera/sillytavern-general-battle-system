@@ -1,6 +1,9 @@
-import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type Combatant } from '../../engine/src/index.js';
+import { DEFAULT_SMALL_ROUND_LIMIT, defaultBattleObjective, type SmallBattle, needsFormationHost, recommendedFormationSlots, flightCapabilityReason, standardConditionMap, FORMATION_NODES, type BattlefieldSpec, type BattleLogEntry, type Combatant } from '../../engine/src/index.js';
 import { activeBattleUnits } from '../../engine/src/battle-limits.js';
-import { MAX_SCENE_UNITS, RECOMMENDED_UNITS, GROUPING_HINT } from './narrative-limits.js';
+import { unitCount, validateRides } from '../../engine/src/platforms.js';
+import { planTransportDeployment } from '../../engine/src/small/transport-groups.js';
+import { formationNodeDistance, setFormation, type FormationNode } from '../../engine/src/mass/formation.js';
+import { MAX_SCENE_UNITS, GROUPING_HINT } from './narrative-limits.js';
 import {groundBlocked} from '../../engine/src/small/layers.js';
 import { gridCostsToGoals, gridDistance, movementStepCost, prepareGridDeployment, neighbors } from '../../engine/src/small/spatial.js';
 
@@ -10,38 +13,100 @@ export function battleCapacityIssue(roster: Combatant[]): string | undefined {
 }
 
 /** 为未指定阵位的编队分配实际空位；不重写明确部署，不修改长期档案。 */
-export function prepareMassRoster(roster: Combatant[]): Combatant[] {
+export function prepareMassRoster(roster: Combatant[], fieldTags: string[] = []): Combatant[] {
+  return prepareMassDeployment(roster, fieldTags).combatants;
+}
+
+function projectMassTransport(roster: Combatant[]) {
+  const arrivals = new Map<string, string>();
+  const mounted = new Map<string, string>();
+  const events: BattleLogEntry[] = [];
+  if (!roster.some(unit => unit.ride)) return { units: roster, arrivals, mounted, events };
+
+  const byId = new Map(roster.map(unit => [unit.id, unit]));
+  validateRides(roster, true);
+  // Only ready units take seats. An inactive carrier has no seats to lend for this deployment.
+  for (const unit of roster) if (unit.ride && (unit.status !== 'ready' || byId.get(unit.ride.platformId)?.status !== 'ready')) {
+    delete unit.ride;
+    unit.mount = false;
+  }
+  const { deployed, overflow } = planTransportDeployment(roster);
+  for (const { foot, carrierId } of overflow) {
+    const carrier = byId.get(carrierId)!;
+    events.push({ round: 1, kind: 'move', transport: true, participants: [foot.id, carrierId],
+      text: `${carrier.name} 座位不足，${foot.name} 的 ${unitCount(foot)} 人步行部署` });
+  }
+  for (const unit of deployed) {
+    if (!unit.ride) continue;
+    const carrier = byId.get(unit.ride.platformId)!;
+    if (carrier.platform?.kind === 'animal' && unit.ride.mode === 'mount') {
+      // The rider is the only fighting card for the mounted group. The assigned horse record stays in the roster for other battles.
+      unit.mount = true;
+      mounted.set(carrier.id, unit.id);
+      events.push({ round: 1, kind: 'move', transport: true, participants: [unit.id],
+        text: `${unit.name} 骑乘 ${carrier.name} 部署，${unitCount(unit)} 人` });
+    } else {
+      arrivals.set(unit.id, carrier.id);
+      delete unit.ride;
+      unit.mount = false;
+      events.push({ round: 1, kind: 'move', transport: true, participants: [unit.id, carrier.id],
+        text: `${unit.name} 随 ${carrier.name} 部署，${unitCount(unit)} 人` });
+    }
+  }
+  // If there are additional passengers sharing an animal platform, use the riding group's arrival position.
+  for (const [unitId, carrierId] of arrivals) arrivals.set(unitId, mounted.get(carrierId) ?? carrierId);
+  for (const event of events) event.participants = event.participants!.filter(id => !mounted.has(id));
+  return { units: deployed.filter(unit => !mounted.has(unit.id)), arrivals, mounted, events };
+}
+
+export function prepareMassDeployment(roster: Combatant[], fieldTags: string[] = []) {
   const issue = battleCapacityIssue(roster); if (issue) throw new Error(issue);
+  const flightContext = { fieldTags };
   const v2 = roster.every(u => u.rulesVersion === 'v2');
-  const units = structuredClone(roster), occupied = new Map<string, number>(), slots = recommendedFormationSlots(roster);
+  const { units, arrivals, mounted, events } = projectMassTransport(structuredClone(roster));
+  if (units.length > roster.length) {
+    const deployedIssue = battleCapacityIssue(units); if (deployedIssue) throw new Error(deployedIssue);
+  }
+  const occupied = new Map<string, number>(), slots = recommendedFormationSlots(units);
+  const carriers = new Set(arrivals.values()), positions = new Map<string, FormationNode>();
   const explicit = (u: Combatant) => !!u.formationPosition || u.tags.some((t) => t.startsWith('zone:')) && u.tags.some((t) => t.startsWith('rank:'));
-  const ordered = [...units].sort((a, b) => Number(explicit(b)) - Number(explicit(a)) || a.id.localeCompare(b.id));
+  const ordered = [...units].sort((a, b) => Number(explicit(b)) - Number(explicit(a))
+    || Number(carriers.has(b.id)) - Number(carriers.has(a.id)) || a.id.localeCompare(b.id));
   for (const side of ['ally', 'enemy'] as const) {
     const group = activeBattleUnits(ordered).filter((u) => u.side === side);
-    const hosts = group.filter(u => v2 && !needsFormationHost(u) && u.scale !== 'hero' && u.hp > 0 && u.status === 'ready'
-      && ((u.body ?? 'human') !== 'human' || flightCapabilityReason(u, standardConditionMap()) !== undefined));
-    const attachedHeroes = new Set(group.filter(needsFormationHost).sort((a,b) => a.id.localeCompare(b.id)).slice(0, hosts.length).map(u => u.id));
+    const hosts = group.filter(u => v2 && !needsFormationHost(u, flightContext) && u.scale !== 'hero' && u.hp > 0 && u.status === 'ready'
+      && ((u.body ?? 'human') !== 'human' || flightCapabilityReason(u, standardConditionMap(), flightContext) !== undefined));
+    const attachedHeroes = new Set(group.filter(u => needsFormationHost(u, flightContext)).sort((a,b) => a.id.localeCompare(b.id)).slice(0, hosts.length).map(u => u.id));
     const combatants = group.filter(u => !attachedHeroes.has(u.id));
     for (const [index, unit] of combatants.entries()) {
       const zone = unit.tags.find((t) => t.startsWith('zone:'))?.slice(5);
       const rank = unit.tags.find((t) => t.startsWith('rank:'))?.slice(5);
-      const preferredWing = zone ?? ['左翼', '中军', '右翼'][Math.floor(index * 3 / Math.max(1, combatants.length))]!;
-      const preferredRank = rank ?? (unit.weapon?.tags?.includes('ranged') ? 'rear' : unit.archetype === 'mobile' ? 'reserve' : 'front');
-      const air = v2 && (unit.airborne ?? !flightCapabilityReason(unit, standardConditionMap()));
+      const arrival = positions.get(arrivals.get(unit.id) ?? '');
+      const preferredWing = zone ?? arrival?.wing ?? ['左翼', '中军', '右翼'][Math.floor(index * 3 / Math.max(1, combatants.length))]!;
+      const preferredRank = rank ?? arrival?.rank ?? (unit.weapon?.tags?.includes('ranged') ? 'rear' : unit.archetype === 'mobile' ? 'reserve' : 'front');
+      const air = v2 && (unit.airborne ?? !flightCapabilityReason(unit, standardConditionMap(), flightContext));
       const key = (id: string) => id + ':' + Number(air);
       const candidates = FORMATION_NODES.filter((n) => n.side === side
         && (!unit.formationPosition || n.id === unit.formationPosition) && (!zone || n.wing === zone) && (!rank || n.rank === rank));
       const node = candidates.filter((n) => (occupied.get(key(n.id)) ?? 0) < slots)
-        .sort((a, b) => Number(b.rank === preferredRank) - Number(a.rank === preferredRank)
+        .sort((a, b) => (arrival ? formationNodeDistance(a, arrival) - formationNodeDistance(b, arrival) : 0)
+          || Number(b.rank === preferredRank) - Number(a.rank === preferredRank)
           || Number(b.wing === preferredWing) - Number(a.wing === preferredWing)
           || (occupied.get(key(a.id)) ?? 0) - (occupied.get(key(b.id)) ?? 0) || a.y - b.y || a.x - b.x)[0];
       if (!node) throw new Error(`${side === 'ally' ? '我方' : '敌方'}阵位容量不足；请调整明确部署或减少本场名单，档案未改变`);
       occupied.set(key(node.id), (occupied.get(key(node.id)) ?? 0) + 1);
+      positions.set(unit.id, node);
       unit.tags = [...unit.tags.filter((t) => !t.startsWith('zone:') && !t.startsWith('rank:')), 'zone:' + node.wing, 'rank:' + node.rank];
       if (unit.formationPosition) unit.formationPosition = node.id;
     }
+    // A transported individual may still use the normal hero attachment rule. Start its search at the carrier's node.
+    for (const unit of group.filter(u => attachedHeroes.has(u.id) && !u.formationPosition &&
+      !u.tags.some(tag => tag.startsWith('zone:') || tag.startsWith('rank:')))) {
+      const arrival = positions.get(arrivals.get(unit.id) ?? '');
+      if (arrival) setFormation(unit, arrival);
+    }
   }
-  return units;
+  return { combatants: units, slots, mounted, events };
 }
 
 export type BattleObjectiveMode = 'auto' | 'annihilation' | 'siege' | 'control' | 'escort' | 'intercept';
@@ -57,7 +122,7 @@ export function vipCandidates(roster: Combatant[], side: 'ally' | 'enemy'): Comb
 /** 只准备下一场任务；对象和规则随战场快照冻结。 */
 export function prepareBattleObjective(field: BattlefieldSpec, roster: Combatant[], mode: BattleObjectiveMode, _protagonistId?: string, attackingSide: 'ally' | 'enemy' = 'ally', selectedVipId?: string): BattlefieldSpec {
   const binding=field.scene?.objectiveRegion,region=binding?field.scene?.regions.find(r=>r.id===binding.id):undefined;
-  const targetCells=region?.access.filter(p=>!groundBlocked(field,p))??[];
+  const targetCells=region?.access.filter(p=>!groundBlocked(field,p) || field.environment?.includes('sea') && roster.some(u => !u.ride && !groundBlocked(field,p,u)))??[];
   if(binding&&!targetCells.length)throw new Error('正文任务地点没有合法目标格');
   if (!['escort', 'intercept'].includes(mode)) {
     const siegeScene = field.generation?.scene ? ['city_siege','building_siege'].includes(field.generation.scene) : field.environment?.includes('siege');
@@ -122,8 +187,18 @@ function neutralControlCell(field: BattlefieldSpec, roster: Combatant[], region?
   const walker = { ...active[0]!, body: 'human' as const, traits: [], traitSources: [], airborne: false, elevation: undefined, mount: false };
   const costs = (side: Combatant['side']) => gridCostsToGoals(routes,deployed.filter(u=>u.side===side).flatMap(u=>objectiveGroundStarts(routes, { ...u, airborne: false })),p=>!groundBlocked(routes,p,walker),
     (p,from)=>movementStepCost(routes,from,walker,field.environment,p));
-  const maps = sides.map(costs), center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
-  const candidates=(region ?? [...maps[0]!.keys()]).filter(p=>maps.every(map=>map.has(p))&&!groundBlocked(field,p,walker));
+  const special = field.environment?.some(tag => tag === 'sea' || tag === 'cosmos');
+  const maps = sides.map(side => {
+    if (!special) return costs(side);
+    const result = new Map<number,number>();
+    for (const u of deployed.filter(u => !u.ride && u.side === side)) {
+      const reachable = gridCostsToGoals(routes,objectiveGroundStarts(routes,u),p => !groundBlocked(routes,p,u),
+        (p,from) => movementStepCost(routes,from,u,field.environment,p),u);
+      for (const [p,cost] of reachable) result.set(p,Math.min(result.get(p) ?? Infinity,cost));
+    }
+    return result;
+  }), center=Math.floor(field.height/2)*field.width+Math.floor(field.width/2);
+  const candidates=(region ?? [...maps[0]!.keys()]).filter(p=>maps.every(map=>map.has(p))&&(special || !groundBlocked(field,p,walker)));
   if (!candidates.length) throw Error(`中立据点没有${sides.length === 3 ? '各方' : '双方'}步兵均可接近的位置`);
   if (region) {
     const x = region.reduce((s, p) => s + p % field.width, 0) / region.length, y = region.reduce((s, p) => s + Math.floor(p / field.width), 0) / region.length;
@@ -150,7 +225,7 @@ function escapeDestination(field: BattlefieldSpec, side: 'ally' | 'enemy', roste
     (p, from) => movementStepCost(routes, from, walker, field.environment, p));
   const wanted = oppositeEscapeEdge(field, side), x = wanted % field.width, y = Math.floor(wanted / field.width);
   const boundary = field.tiles.flatMap((_, p) => p % field.width === 0 || p % field.width === field.width - 1 || p < field.width || p >= field.tiles.length - field.width ? [p] : []);
-  const candidates = (region ?? boundary).filter(p => !groundBlocked(field, p) && costs.has(p));
+  const candidates = (region ?? boundary).filter(p => !groundBlocked(field, p, walker) && costs.has(p));
   if (!candidates.length) throw Error('护送撤离点没有护送对象可到达的合法位置');
   const sameEdge = (p: number) => x === 0 ? p % field.width === 0 : x === field.width - 1 ? p % field.width === x
     : Math.floor(p / field.width) === y;
@@ -163,11 +238,8 @@ function escapeDestination(field: BattlefieldSpec, side: 'ally' | 'enemy', roste
 }
 
 /** 默认模式只在准备下一战时计算，不转换单位身份或进行中的战斗。 */
-export function recommendBattleMode(roster: Combatant[]): { mode: 'small' | 'mass'; reason: string } {
-  const units = activeBattleUnits(roster);
-  // 地图承载的是可操作实体，编队人数不等于格子数，也不能用师团等名称判定。
-  if (units.length > RECOMMENDED_UNITS) return { mode: 'mass', reason: '参战单位超过32张，采用会战军令与阶段结算；人物身份保持不变' };
-  return { mode: 'small', reason: '参战单位不超过32张，采用小战地图，保留具体移动与目标操作' };
+export function recommendBattleMode(_roster: Combatant[]): { mode: 'small' | 'mass'; reason: string } {
+  return { mode: 'small', reason: '小规模战斗使用战术地图' };
 }
 
 /** 只延长尚未结束的旧默认小战，不改已判胜战果或其他自定义期限。 */

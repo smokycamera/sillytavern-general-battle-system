@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadMovementScale } from './equipment-load.js';
 import { revisedLoad } from './load-model.js';
@@ -28,9 +29,9 @@ export function movementLabel(unit: Combatant, tags: string[] = []): string {
 }
 /** 训练先攻与地图移动分开；移动只读实际体量、负载、专长、状态和疲劳。 */
 export function movementPoints(unit: Combatant, tags: string[] = []): number {
-  if (unit.rulesVersion !== 'v2') return unit.body === 'vehicle' ? 2 : 3;
+  if (unit.rulesVersion !== 'v2') return isVehicleBody(unit.body) ? 2 : 3;
   const ids = activeTraitIds(unit), conditions = activeConditionIds(unit);
-  const vehicle = unit.body === 'vehicle';
+  const vehicle = isVehicleBody(unit.body);
   const light = ['human', 'large'].includes(unit.body ?? 'human') && (unit.armor?.tier ?? 0) <= 2;
   // 平原专精 L2 起机动+1、L9 起+2（旧规则一律 L5 即+1），与坐骑、快速等其他来源取较大值。
   const plains = tags.includes('plains') ? plainsMobility(traitLevel(unit, 'plains-runner', ids)) : 0;
@@ -39,7 +40,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
   const night = tags.includes('night') ? nightMovePenalty(traitLevel(unit, 'night-fighter', ids)) : 0;
   if (gradedNumbers(unit) || revisedLoad(unit)) {
     const movement = bodyMovement(unit) + mobility + Number(conditions.includes('hasted')) - Number(conditions.includes('slowed')) - night - fatiguePenalty(unit)
-      + Number(unit.status === 'routing') + (gradedNumbers(unit) ? (unit.bonuses?.speed ?? 0) * unit.level / 10 : 0) + equipmentStep(unit.armor?.recipe, 'speed')
+      + Number(unit.status === 'routing') + (gradedNumbers(unit) ? ((unit.bonuses?.speed ?? 0) * unit.level + (unit.platform?.bonuses?.speed ?? 0) * (unit.platform?.power ?? 1)) / 10 : 0) + equipmentStep(unit.armor?.recipe, 'speed')
       + (progression(unit) ? wornEffects(unit).speed ?? 0 : 0);
     return Math.max(0, Number((movement * armorWear(unit).movement * loadMovementScale(unit)).toPrecision(12)));
   }
@@ -50,7 +51,7 @@ export function movementPoints(unit: Combatant, tags: string[] = []): number {
 export function formationMarchSteps(unit: Combatant, tags: string[] = []): number {
   if (gradedNumbers(unit) || revisedLoad(unit)) {
     const movement = movementPoints(unit, tags), airborne = revisedLoad(unit) && isAirborne(unit);
-    const base = airborne ? Math.max(0, Math.min(2, movement - 1)) : movement / (unit.body === 'vehicle' ? 2 : 3);
+    const base = airborne ? Math.max(0, Math.min(2, movement - 1)) : movement / (isVehicleBody(unit.body) ? 2 : 3);
     const rough = tags.includes('forest') && !freeMarch(traitLevel(unit, 'forest-lore')) || tags.includes('mountain') && !freeMarch(traitLevel(unit, 'mountain-born'));
     const traits = activeTraitIds(unit), agile = traits.includes('agile') && (!revisedLoad(unit)
       || !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5));
@@ -60,7 +61,7 @@ export function formationMarchSteps(unit: Combatant, tags: string[] = []): numbe
   const traits = activeTraitIds(unit);
   const agile = traits.includes('agile') && !traitPrerequisiteReason(unit, 'agile') && (!phase2Traits(unit) || traitLevel(unit, 'agile', traits) >= 5);
   if (!agile && (tags.includes('forest') && !freeMarch(traitLevel(unit, 'forest-lore', traits)) || tags.includes('mountain') && !freeMarch(traitLevel(unit, 'mountain-born', traits)))) return 1;
-  return movementPoints(unit, tags) >= (unit.body === 'vehicle' ? 3 : 4) ? 2 : 1;
+  return movementPoints(unit, tags) >= (isVehicleBody(unit.body) ? 3 : 4) ? 2 : 1;
 }
 /** 会战困难地形的额外行军负担；同域减免各自求成本后取低，不叠乘。 */
 export function formationMarchCost(unit: Combatant, tags: string[]): number {

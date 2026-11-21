@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SmallBattle, generateUnit, standardField, traitRegistry, V34_OVERFLOW_D20 } from '../../engine/src/index.js';
 import { createStructure } from '../../engine/src/small/layers.js';
 import { tacticalMovementPreview, renderTacticalBattle } from './tactical-view.js';
+import { makeNarrativeBatch, reportForDelivery } from './battle-reports.js';
 const registry = traitRegistry();
 function setup() {
   const unit = (id: string, side: 'ally' | 'enemy') => { const u = generateUnit({ name: id, side, scale: 'hero', level: 3, rulesVersion: 'v2', traits: [] }, { seed: id, registry, noVariance: true }).unit; u.id = id; return u; };
@@ -21,6 +22,11 @@ describe('截图坐标的墙体移动入口', () => {
     const html = renderTacticalBattle(b, { mode: 'move', selectedId: 'a', cell: 33, inspectedCell: 33 });
     expect(html).toContain('执行登城'); expect(html).toContain('登城到B5 · 花费2移动 · 消耗主行动');
     b.climb('a', 33); expect(a.elevation).toBe(1); expect(b.actedThisTurn.has('a')).toBe(true); expect(b.movementLeft('a')).toBe(before - preview.path!.cost);
+    const sent = reportForDelivery(makeNarrativeBatch(b, undefined, {}, 'delta').text);
+    expect(sent).toContain('a 登上城防平台 B5');
+    expect(sent).not.toContain('消耗主行动与');
+    const archived = '▸ a 登上城防平台 B5(高度2)，消耗主行动与2移动\n▸ a 下至地面 C5，消耗主行动与1移动';
+    expect(reportForDelivery(archived)).toBe('▸ a 登上城防平台 B5(高度2)\n▸ a 下至地面 C5');
   });
   it('城外无登城特质仍拒绝，已花主行动不能借移动按钮免费登墙', () => {
     const { a, b } = setup(); a.pos = 32;

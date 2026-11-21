@@ -1,27 +1,39 @@
 import { phase2Value } from './phase2-traits.js';
 import { isIndirectCannonWeapon } from './loadout.js';
-import type { Combatant, ConditionDef, Weapon } from './types.js';
+import type { Combatant, ConditionDef, RulePack, Weapon } from './types.js';
 import { activeTraitIds, activeConditionIds, effectiveTraitLevel } from './trait-sources.js';
-import { traitParameter } from './trait-parameters.js';
+import { DEFAULT_NEW_TRAIT_LEVEL, traitParameter } from './trait-parameters.js';
 import { standardConditionMap } from './conditions.js';
 const defaultConditions = standardConditionMap();
 export type FlightConditions = Pick<ReadonlyMap<string, ConditionDef>, 'get'>;
 export function isAirborne(unit: Combatant): boolean { return unit.rulesVersion === 'v2' && unit.airborne === true; }
 export function sameLayer(a: Combatant, b: Combatant): boolean { return isAirborne(a) === isAirborne(b) && (isAirborne(a) || (a.elevation ?? 0) === (b.elevation ?? 0)); }
-export function hasFlightAbility(unit: Combatant): boolean { return unit.rulesVersion === 'v2' && activeTraitIds(unit).includes('flying'); }
+export interface FlightContext {
+  fieldTags?: readonly string[];
+  rules?: RulePack;
+}
+function spaceManeuverGrantsFlight(context?: FlightContext): boolean {
+  // Map generation uses the current rules. A saved battle supplies its frozen rule pack.
+  return (!context?.rules || context.rules.spaceManeuverFlight === true) && !context?.fieldTags?.includes('cosmos');
+}
+export function hasFlightAbility(unit: Combatant, context?: FlightContext): boolean {
+  if (unit.rulesVersion !== 'v2') return false;
+  const traits = activeTraitIds(unit);
+  return traits.includes('flying') || (traits.includes('space-adapted') && spaceManeuverGrantsFlight(context));
+}
 /** Flight and AA use the same table; the normal attack-defense difference cancels them. */
-export function flightDefense(actor: Combatant, target: Combatant): number {
+export function flightDefense(actor: Combatant, target: Combatant, context?: FlightContext): number {
   if (target.flightModel !== 'maneuver-v1' || !isAirborne(target) || isAirborne(actor)) return 0;
-  const level = effectiveTraitLevel(target, 'flying');
+  const level = effectiveTraitLevel(target, 'flying') || (hasFlightAbility(target, context) ? DEFAULT_NEW_TRAIT_LEVEL : 0);
   return level > 0 ? traitParameter('flightDefense', level) : 0;
 }
-export function flightCapabilityReason(unit: Combatant, defs: FlightConditions = defaultConditions): string | undefined {
+export function flightCapabilityReason(unit: Combatant, defs: FlightConditions = defaultConditions, context?: FlightContext): string | undefined {
   if (unit.status !== 'ready' || unit.hp <= 0) return '当前不能主动飞行';
-  return flightMaintenanceReason(unit, defs);
+  return flightMaintenanceReason(unit, defs, context);
 }
-export function flightMaintenanceReason(unit: Combatant, defs: FlightConditions = defaultConditions): string | undefined {
+export function flightMaintenanceReason(unit: Combatant, defs: FlightConditions = defaultConditions, context?: FlightContext): string | undefined {
   if (unit.status === 'fled') return undefined;
-  if (!hasFlightAbility(unit)) return '没有有效飞行来源';
+  if (!hasFlightAbility(unit, context)) return '没有有效飞行来源';
   if (unit.status === 'dead' || unit.status === 'dying' || unit.hp <= 0) return '当前无法维持飞行';
   if (activeConditionIds(unit).some((id) => defs.get(id)?.skipTurn || defs.get(id)?.preventMove)) return '失能或定身，无法维持飞行';
   return undefined;

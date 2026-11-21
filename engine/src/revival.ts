@@ -1,3 +1,4 @@
+import { isVehicleBody } from './vehicle-size.js';
 import type { Combatant } from './types.js';
 import { effectiveTraitLevel } from './trait-sources.js';
 import { traitParameter } from './trait-parameters.js';
@@ -16,7 +17,7 @@ export function prepareRevivalBattle(unit: Combatant, reset = false): void {
 
 /** 仅在实际伤害造成归零时调用；普通治疗、撤军和归档不会进入此处。 */
 export function tryRevive(unit: Combatant): string | undefined {
-  if (unit.revivalModel !== 'revival-v1' || unit.rulesVersion !== 'v2' || unit.hp > 0 || !['ready', 'routing'].includes(unit.status)) return;
+  if (unit.transportOrigin || unit.revivalModel !== 'revival-v1' || unit.rulesVersion !== 'v2' || unit.hp > 0 || !['ready', 'routing'].includes(unit.status)) return;
   const state = unit.revivalState, level = effectiveTraitLevel(unit, 'revival');
   if (!state?.members || !level || state.used >= traitParameter('revivalUses', level)) return;
   const percent = traitParameter('revivalPercent', level);
@@ -39,5 +40,5 @@ export function tryRevive(unit: Combatant): string | undefined {
   unit.status = unit.moraleState?.forcedRetreat ? 'routing' : 'ready';
   if (unit.moraleState) { unit.moraleState.damage = 0; unit.moraleState.damagePenalty = 0; delete unit.moraleState.cause; }
   changeMorale(unit, Math.max(0, Math.ceil(fullMorale(unit) / 2) - (unit.morale ?? unit.moraleState?.personal ?? fullMorale(unit))));
-  return `${unit.name} 复活，恢复至${displayNumber(unit.hp)}${unit.scale === 'hero' ? '生命' : unit.body === 'vehicle' ? '辆' : '人'}${percent === 100 ? '，满血复生' : ''}（本场剩余${Math.max(0, traitParameter('revivalUses', level) - state.used)}次）`;
+  return `${unit.name} 复活，恢复至${displayNumber(unit.hp)}${unit.scale === 'hero' ? '生命' : isVehicleBody(unit.body) ? '辆' : '人'}${percent === 100 ? '，满血复生' : ''}（本场剩余${Math.max(0, traitParameter('revivalUses', level) - state.used)}次）`;
 }

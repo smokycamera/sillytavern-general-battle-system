@@ -1,16 +1,20 @@
+import { readReportStart } from './report-start-archive.js';
 import { displayNumber } from '../../engine/src/display-number.js';
-import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel } from '../../engine/src/index.js';
+import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel, energyShieldCapacity } from '../../engine/src/index.js';
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
-import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel, HEIGHT_LEGEND } from '../../engine/src/inject/format.js';
-import { reportsHeights } from '../../engine/src/small/height-map.js';
+import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel } from '../../engine/src/inject/format.js';
 import { formationNode } from '../../engine/src/mass/formation.js';
 import type { BattlefieldSpec } from '../../engine/src/small/spatial.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
 import {memberNoun} from '../../engine/src/member-health.js';
 import { itemUseReport } from './item-use-report.js';
+import { applySettlementPrompt, type PromptSettings } from './prompt-settings.js';
 import { isCommunicationLog } from '../../engine/src/diplomacy.js';
+import type { UiLanguage } from './ui-language.js';
+import { englishReportAttack, englishReportHeadings } from './report-language.js';
 
 export type Battle = SmallBattle | MassBattle;
 export interface NarrativeEvent { index: number; round: number; text: string }
@@ -18,6 +22,7 @@ export interface BattleReport {
   id: string; card: string; digest: string; summary: string; deliveries: Record<string, DeliveryReceipt>;
   roundCount?: number; epilogue?: string; narrativeEvents?: NarrativeEvent[]; eventCount?: number;
   start?: import('./report-history.js').BattleStart;
+  packedStart?: string;
   afterArchiveStamp?: string;
   supersededBy?: string;
 }
@@ -28,7 +33,23 @@ export function withCommunications(text: string, events: Pick<NarrativeEvent, 'r
   const task = text.endsWith(NARRATIVE_TASK) ? NARRATIVE_TASK : '';
   return [task ? text.slice(0, -task.length).trimEnd() : text, '【消息与交涉】', ...missing.map(event => `第${event.round}回合｜${event.text}`), task].filter(Boolean).join('\n');
 }
-export const archivedDigest = (report: BattleReport): string => withCommunications(report.digest || report.card, report.narrativeEvents ?? []);
+// Saved reports can contain the movement cost written by earlier versions.
+function omitArchivedClimbCost(text: string): string {
+  return text.replace(/((?:登上城防平台|下至地面) [A-Z]+\d+(?:\(高度-?\d+\))?)，消耗主行动与\d+移动/g, '$1');
+}
+export function reportForDelivery(text: string, settings?: PromptSettings, language: UiLanguage = 'zh-CN'): string {
+  const report = omitArchivedClimbCost(text).replace(/^((?:▸ )?[［【\[])(?:总协同攻击|协同(?:攻击|近战|远程|射击))[·：:]\s*/gm, '$1');
+  return applySettlementPrompt(language === 'en' ? englishReportHeadings(report) : report, settings, language);
+}
+export function reportNarrationInstructions(language: UiLanguage, epilogue: boolean): string {
+  const english = language === 'en';
+  const describe = english ? 'Use the report to describe the battle in detail. Do not output a <tb> block.' : '本次回复应根据战报对战斗过程进行详细描写，禁止输出<tb>内容';
+  const items = english ? 'End the epilogue with the items used and their actual effects. If no items were used or an effect was not recorded, say so. Do not invent items, consumption, or effects.'
+    : '终章最后补充本场道具使用及实际效果；只依据记录，未使用或效果缺失时如实说明，不补造道具、消耗或效果。';
+  const equipment = english ? 'Pay attention to changes in equipment quantities. A decrease means the unit members using that equipment were killed.' : '注意装备数量变动，减少代表装备者阵亡';
+  return (epilogue ? [describe, items, equipment] : [describe, equipment]).join('\n');
+}
+export const archivedDigest = (report: BattleReport): string => omitArchivedClimbCost(withCommunications(report.digest || report.card, report.narrativeEvents ?? []));
 export interface NarrativeBatch { battleId: string; key: string; kind: 'delta' | 'epilogue'; from: number; to: number; text: string }
 export interface BattleDelivery { cursor: number; receipts: Record<string, DeliveryReceipt & { from: number; to: number; kind: NarrativeBatch['kind'] }> }
 export type BattleDeliveries = Record<string, BattleDelivery>;
@@ -51,19 +72,24 @@ export function publicBattleEvents(b: Battle): { index: number; entry: BattleLog
   renderEvents?.set(b, events); return events;
 }
 /** 日志区间[from,to)内可叙述的事件；连续逐格移动与速射在区间内合并，不跨过已发送的游标。 */
-export function narrativeEvents(b: Battle, from = 0, to = b.log.length): NarrativeEvent[] {
+export function narrativeEvents(b: Battle, from = 0, to = b.log.length, language: UiLanguage = 'zh-CN'): NarrativeEvent[] {
   const picked = publicBattleEvents(b).filter(({index,entry}) => index >= from && index < to && !['initiative','round'].includes(entry.kind) && !/^布阵/.test(entry.text));
-  return compactEventGroups(picked.map(p => p.entry), { unresolvedAttacks: true })
-    .map(group => ({ index: picked[group.first]!.index, round: picked[group.first]!.entry.round, text: group.text }));
+  const entries = picked.map(p => p.entry);
+  return compactEventGroups(entries, { unresolvedAttacks: true }).map(group => ({ index: picked[group.first]!.index,
+    round: entries[group.first]!.round, text: language === 'en' ? englishReportAttack(entries.slice(group.first, group.last + 1), group.text) : group.text }));
 }
 /** 归档时按已发送的游标分两段合并，之后从归档补发的增量不重复已经发出的移动。 */
 export function archivedNarrativeEvents(b: Battle, deliveries: BattleDeliveries): NarrativeEvent[] {
   const cursor = Math.max(0, Math.min(deliveries[battleIdOf(b)]?.cursor ?? 0, b.log.length));
   return [...narrativeEvents(b, 0, cursor), ...narrativeEvents(b, cursor)];
 }
-export function knownBattleState(b: Battle): string {
+export function knownBattleUnits(b: Battle): Combatant[] {
+  if (b.isOver()) return b.combatants;
+  return b instanceof SmallBattle ? b.rosterInView('ally') : b.visibleCombatants('ally');
+}
+export function knownBattleState(b: Battle, language: UiLanguage = 'zh-CN'): string {
   const field = b instanceof SmallBattle ? b.battlefield : undefined;
-  return ['【最新状态】' + (reportsHeights(field) ? '（' + HEIGHT_LEGEND + '）' : ''), ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...(b.isOver() ? b.combatants : b.visibleCombatants('ally')).map(u=>epilogueUnit(b,u,field)), ...fieldFacts(b)].join('\n');
+  return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...knownBattleUnits(b).map(u=>epilogueUnit(b,u,field,language)), ...fieldFacts(b)].join('\n');
 }
 const RANK_NAMES = { front: '前列', rear: '后列', reserve: '预备列' } as const;
 /** 小战写格子、地形与高度，会战写阵位；撤离的单位和没有位置的旧记录不写。 */
@@ -73,13 +99,22 @@ function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
   if (u.rulesVersion !== 'v2') return '';
   try { const node = formationNode(b.effectiveUnit(u)); return '(' + node.wing + RANK_NAMES[node.rank] + ')'; } catch { return ''; }
 }
-function epilogueUnit(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
+function epilogueUnit(b: Battle, u: Combatant, field: BattlefieldSpec | undefined, language: UiLanguage): string {
+  if (language === 'en') {
+    const side = { ally: 'Ally', enemy: 'Enemy', neutral: 'Third party' }[u.side];
+    const status = { ready: 'Ready', dying: 'Dying', dead: u.scale === 'hero' ? 'Dead' : 'Combat ineffective', routing: 'Routing', fled: 'Withdrawn' }[u.status];
+    const strength = `${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)} ${u.scale === 'hero' ? 'HP' : isVehicleBody(u.body) ? 'vehicles' : 'members'}`;
+    const shield = u.energyShield && u.hp > 0 && u.status !== 'dead' && u.status !== 'fled' ? `Energy shield ${Math.round(u.energyShield.remaining)}/${displayNumber(energyShieldCapacity(u))}${u.energyShield.overloaded ? ` (${u.energyShield.overloaded} overloaded)` : ''}` : '';
+    const wounded = u.recoverableWounded ? `${u.recoverableWounded} recoverable wounded` : '';
+    const conditions = [...new Set(u.conditions.filter(c => c.dur > 0).map(c => /^[a-z-]+$/.test(c.id) ? c.id.replaceAll('-', ' ') : b.conditions.get(c.id)?.name ?? c.id))];
+    return `${side} ${u.name}${unitPlace(b,u,field)}: ${[strength, status, shield, wounded, ...conditions].filter(Boolean).join(', ')}`;
+  }
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=[...new Set(u.conditions.filter(c=>c.dur>0).map(c=>b.conditions.get(c.id)?.name??c.id))];
   return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}${reportShieldLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
-function epilogueDamage(b: Battle): string[] {
+function epilogueDamage(b: Battle, language: UiLanguage): string[] {
   const totals=new Map<string,{source?:string;target:string;amount:number;life:boolean;members:number;membersPartial:boolean;causes:Set<string>;sourceName?:string;targetName?:string}>();
   for(const e of b.isOver()?b.log:publicBattleEvents(b).map(e=>e.entry)) {
     for (const r of e.resolutions?.length?e.resolutions:[e.resolution]) {
@@ -98,6 +133,12 @@ function epilogueDamage(b: Battle): string[] {
   }
   return [...totals.values()].map(row=>{
     const source=b.combatants.find(u=>u.id===row.source),target=b.combatants.find(u=>u.id===row.target);
+    if (language === 'en') {
+      const members = row.life && target && target.scale !== 'hero' ? `, ${row.membersPartial ? 'at least ' : ''}${row.members} ${isVehicleBody(target.body) ? 'vehicles' : 'members'} lost` : '';
+      const amount = `${displayNumber(row.amount)} ${row.life || target?.scale === 'hero' ? 'HP lost' : target ? isVehicleBody(target.body) ? 'vehicles lost' : 'members lost' : 'damage'}`;
+      const causes = row.causes.size ? ` (including ${[...row.causes].join(', ')})` : '';
+      return `${source?.name ?? row.sourceName ?? 'Unknown source'} → ${target?.name ?? row.targetName ?? row.target}: ${amount}${causes}${members}`;
+    }
     const members=row.life&&target&&target.scale!=='hero'?`，${row.membersPartial?'减员至少':'减员'}${row.members}${memberNoun(target)}`:'';
     return `${source?.name??row.sourceName??'来源未记录'} → ${target?.name??row.targetName??row.target}：累计造成${displayNumber(row.amount)}${row.life||target?.scale==='hero'?'生命损失':target?memberNoun(target)+'减员':'点损失'}${row.causes.size?'（含'+[...row.causes].join('、')+'）':''}${members}`;
   });
@@ -105,46 +146,49 @@ function epilogueDamage(b: Battle): string[] {
 /** 致命规则；战中切换过时写明开局规则和每次切换的轮次，单位按倒下时的规则记录。 */
 function lethalityRule(b: Battle): string {
   const changes = b.log.filter(e => e.kind === 'rule' && e.rule);
-  if (!changes.length) return b.nonLethal ? '非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。' : '致命：生命归零按阵亡结算。';
+  const lethal = b.rules.rescueAtZero ? '人员编队现员归零后仍结算可救伤兵，其余单位生命归零按阵亡结算' : '生命归零按阵亡结算';
+  if (!changes.length) return b.nonLethal ? '非致命：双方生命归零只会濒死失能，不视为死亡；编队减员为可救伤兵。' : '致命：' + lethal + '。';
   const name = (nonLethal: boolean) => nonLethal ? '非致命' : '致命';
   return `开局${name(!changes[0]!.rule!.nonLethal)}，${changes.map(e => `第${e.round}轮起改为${name(e.rule!.nonLethal)}`).join('，')}。`
-    + '单位按倒下时的规则记录：致命阶段生命归零即阵亡；非致命阶段只会濒死失能，不视为死亡，编队减员为可救伤兵。';
+    + '单位按倒下时的规则记录：致命阶段' + lethal + '；非致命阶段只会濒死失能，不视为死亡，编队减员为可救伤兵。';
 }
-export function battleEpilogue(b: Battle, start?: BattleReport['start']): string {
-  const visible=b.isOver()?b.combatants:b.visibleCombatants('ally'),ids=new Set(visible.map(u=>u.id));
+export function battleEpilogue(b: Battle, start?: BattleReport['start'], language: UiLanguage = 'zh-CN'): string {
+  const visible=knownBattleUnits(b),ids=new Set(visible.map(u=>u.id));
   const opening=start?.battleId===battleIdOf(b)&&Array.isArray(start.snapshot.combatants)?(start.snapshot.combatants as Combatant[]).filter(u=>ids.has(u.id)):undefined;
   // 开局位置按开战快照里的地图写，之后城墙被毁等变化不回写到开局。
   const openingField=b instanceof SmallBattle&&opening&&start!.snapshot.battlefield&&typeof start!.snapshot.battlefield==='object'?start!.snapshot.battlefield as BattlefieldSpec:undefined;
   const field=b instanceof SmallBattle?b.battlefield:undefined,facts=fieldFacts(b);
-  const damage=epilogueDamage(b);
+  const damage=epilogueDamage(b, language);
   const items = b.isOver() ? itemUseReport(b.combatants, b.log) : [];
-  const communications = (b.isOver() ? b.log : publicBattleEvents(b).map(event => event.entry)).filter(isCommunicationLog);
+  const events = b.isOver() ? b.log : publicBattleEvents(b).map(event => event.entry);
+  const communications = events.filter(isCommunicationLog), transport = events.filter(e => e.transport);
   const goal = b instanceof SmallBattle && b.battlefield?.objective;
   const mission = goal ? goal.kind === 'annihilation' ? '歼灭战' : goal.kind === 'control' ? goal.attackingSide ? goal.attackingSide === 'ally' ? '攻城战' : '守城战' : '占旗战' : '护送/拦截' : '军团会战';
   return [`【战阵·战斗终章】${mission}，共${completedBattleRounds(b)}轮；${b.isOver() ? b.winner()==='ally'?'我方胜利':b.winner()==='neutral'?'第三方获胜，我方失败':b.winner()==='enemy'?'我方失利':'停战/僵持':'尚未结束'}`,
     ...(b instanceof SmallBattle && b.isOver() ? ['【胜负原因】' + smallBattleResult(b)] : []),
     `【本场规则】${lethalityRule(b)}`,
     ...(facts.length?['【战场】',...facts]:[]),
-    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField)):['开局状态与血量未记录。']),
-    '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field)),
-    '【伤害来源】',...(damage.length?damage:['没有记录到可核实的伤害。']),
-    '【道具使用和效果】',...(items.length ? items : [b.isOver() ? '本场没有记录到道具使用。' : '战斗尚未结束，道具使用与效果将在终章汇总。']),
+    '【开局单位状态与血量】',...(opening?.length?opening.map(u=>epilogueUnit(b,u,openingField,language)):[language === 'en' ? 'Opening status and HP were not recorded.' : '开局状态与血量未记录。']),
+    '【结束单位状态与血量】',...visible.map(u=>epilogueUnit(b,u,field,language)),
+    '【伤害来源】',...(damage.length?damage:[language === 'en' ? 'No verifiable damage was recorded.' : '没有记录到可核实的伤害。']),
+    '【道具使用和效果】',...(items.length ? items : [b.isOver() ? language === 'en' ? 'No item use was recorded.' : '本场没有记录到道具使用。' : language === 'en' ? 'Item use and effects will be summarized after the battle.' : '战斗尚未结束，道具使用与效果将在终章汇总。']),
+    ...(transport.length ? ['【坐骑与载具】', ...transport.map(e => `第${e.round}回合｜${e.text}`)] : []),
     ...(communications.length ? ['【消息与交涉】', ...communications.map(event => `第${event.round}回合｜${event.text}`)] : []),
     NARRATIVE_TASK].join('\n');
 }
-export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport | undefined, deliveries: BattleDeliveries, kind: NarrativeBatch['kind'], start?: BattleReport['start']): NarrativeBatch {
+export function makeNarrativeBatch(b: Battle | undefined, report: BattleReport | undefined, deliveries: BattleDeliveries, kind: NarrativeBatch['kind'], start?: BattleReport['start'], language: UiLanguage = 'zh-CN'): NarrativeBatch {
   const id=b ? battleIdOf(b) : report?.id; if(!id)throw Error('没有可发送的战况');
   if(kind==='epilogue') {
     if(b && !b.isOver())throw Error('战斗结束后可发送终章');
-    return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??report?.start):withCommunications(report?.epilogue??report?.summary??'',report?.narrativeEvents??[])};
+    return {battleId:id,kind,key:'epilogue',from:0,to:b?.log.length??report?.eventCount??0,text:b?battleEpilogue(b,start??(report && readReportStart(report)),language):withCommunications(report?.epilogue??report?.summary??'',report?.narrativeEvents??[])};
   }
   const from=deliveries[id]?.cursor??0,to=b?.log.length??report?.eventCount??0;
   if(!b && !report?.narrativeEvents)throw Error('这份战报缺少事件游标，可发送完整战报或状态摘要');
-  const events=(b?narrativeEvents(b,from,to):report!.narrativeEvents!).filter(e=>e.index>=from && e.index<to);
+  const events=(b?narrativeEvents(b,from,to,language):report!.narrativeEvents!).filter(e=>e.index>=from && e.index<to);
   if(!events.length)throw Error('没有新的可叙述事件');
   let round=-1;const lines:string[]=[];
   for(const e of events){if(e.round!==round){round=e.round;lines.push(`【第${round}轮】`);}lines.push('▸ '+e.text);}
-  return {battleId:id,kind,key:`delta:${from}:${to}`,from,to,text:['【战阵·新增战况】',...lines,b?knownBattleState(b):report!.summary.split('【叙述任务】')[0]!.trimEnd(),NARRATIVE_TASK].join('\n')};
+  return {battleId:id,kind,key:`delta:${from}:${to}`,from,to,text:['【战阵·新增战况】',...lines,b?knownBattleState(b,language):report!.summary.split('【叙述任务】')[0]!.trimEnd(),NARRATIVE_TASK].join('\n')};
 }
 export function beginNarrativeDelivery(deliveries: BattleDeliveries, batch: NarrativeBatch): void {
   const state=deliveries[batch.battleId]??={cursor:0,receipts:{}};

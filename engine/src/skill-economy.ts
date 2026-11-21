@@ -1,8 +1,9 @@
 import type { Ability, Combatant } from './types.js';
 import type { ObservationContext } from './observation.js';
 import { standardConditionMap } from './conditions.js';
-import { isEnduranceModel, abilityCost, resourceRound, skillExertion, spRecovery } from './resources.js';
+import { isEnduranceModel, abilityCost, resourceRound, skillExertion, spRecovery, fatiguePenalty } from './resources.js';
 import { fatigueAfter } from './tactics.js';
+import { abilityUsabilityReason } from './actions.js';
 import { actionPotential } from './skill-tactics.js';
 import { skillResourceCost } from './skill-runtime.js';
 import { memberHealth } from './member-health.js';
@@ -31,15 +32,26 @@ export function nextResourceState(context: ObservationContext, source: Combatant
   return next;
 }
 
-function futureAttack(context: ObservationContext, source: Combatant, action: Ability | 'active' | 'rest'): number {
+function futureAttack(context: ObservationContext, source: Combatant, action: Ability | 'active' | 'rest', next: Combatant): number {
   let cache = forecasts.get(context); if (!cache) forecasts.set(context, cache = new WeakMap());
   let values = cache.get(source); if (!values) cache.set(source, values = new Map());
   const known = values.get(action); if (known !== undefined) return known;
-  const next = nextResourceState(context, source, action === 'rest', typeof action === 'string' ? undefined : action);
   // Restrict to damage: a future heal must not count the same current wound a second time.
   const value = Math.max(0, ...context.units.filter(t => t.side !== source.side && t.hp > 0 && ['ready', 'routing'].includes(t.status))
     .map(target => actionPotential(context, next, target)));
   values.set(action, value); return value;
+}
+
+// These forecasts differ only in fatigue, resource balances and ability counters.
+// If the fatigue penalty and legal damage actions match, both forecasts have the
+// same reachable attacks and their difference is exactly zero.
+function forecastDifference(context: ObservationContext, source: Combatant, action: Ability | 'rest'): number {
+  const active = nextResourceState(context, source);
+  const next = nextResourceState(context, source, action === 'rest', typeof action === 'string' ? undefined : action);
+  if (fatiguePenalty(active) === fatiguePenalty(next) && !source.abilities.some(ability =>
+    ability.effects.some(effect => effect.op === 'damage') &&
+    !!abilityUsabilityReason(active, ability) !== !!abilityUsabilityReason(next, ability))) return 0;
+  return futureAttack(context, source, action, next) - futureAttack(context, source, 'active', active);
 }
 
 /** Price lost next-action options in the same expected-life units as attacks, not just raw SP.
@@ -49,7 +61,7 @@ export function tacticalSkillCost(context: ObservationContext, source: Combatant
   const base = skillResourceCost(ability, source), cost = abilityCost(source, ability);
   if (!isEnduranceModel(source.resourceModel) || cost?.resource !== 'SP' || cost.amount <= 0
     || ability.effects.some(e => e.op === 'resource' && e.resource === 'SP')) return base;
-  const loss = Math.max(0, futureAttack(context, source, 'active') - futureAttack(context, source, ability));
+  const loss = Math.max(0, -forecastDifference(context, source, ability));
   const remaining = context.units.filter(t => t.side !== source.side && t.hp > 0 && ['ready', 'routing'].includes(t.status))
     .reduce((sum, target) => sum + memberHealth(target), 0);
   // An attack likely to end the observed fight should not save SP for an imaginary extra round.
@@ -62,5 +74,5 @@ export function tacticalSkillCost(context: ObservationContext, source: Combatant
  */
 export function tacticalRestValue(context: ObservationContext, source: Combatant): number {
   if (!isEnduranceModel(source.resourceModel) || source.status !== 'ready' || source.hp <= 0) return 0;
-  return Math.max(0, futureAttack(context, source, 'rest') - futureAttack(context, source, 'active')) * FUTURE_DISCOUNT;
+  return Math.max(0, forecastDifference(context, source, 'rest')) * FUTURE_DISCOUNT;
 }

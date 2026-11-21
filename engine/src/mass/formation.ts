@@ -3,10 +3,11 @@ import { ignoresFriendlyScreen } from '../loadout.js';
 import { canShootOverAlly } from '../body.js';
 import type { Combatant } from '../types.js';
 import { activeTraitIds } from '../trait-sources.js';
-import { hasFlightAbility, isAirborne, sameLayer, aerialTargetReason, rangedTargetDistance } from '../aerial.js';
+import { type FlightContext, hasFlightAbility, isAirborne, sameLayer, aerialTargetReason, rangedTargetDistance } from '../aerial.js';
 /** 普通个体在会战依附编队；真实独立平台与飞行单位保留独立位置。 */
-export function needsFormationHost(unit: Combatant): boolean {
-  return unit.scale === 'hero' && !unit.summonerId && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit);
+export function needsFormationHost(unit: Combatant, context?: FlightContext): boolean {
+  return unit.scale === 'hero' && !unit.summonerId && !(unit.mount && unit.ride?.mode === 'mount')
+    && (unit.body ?? 'human') === 'human' && unit.status === 'ready' && !hasFlightAbility(unit, context);
 }
 /** New battle capacity: 3..7 per node, chosen once from the larger faction.
  * Dead units do not shrink a frozen battle; callers persist the resulting number. */

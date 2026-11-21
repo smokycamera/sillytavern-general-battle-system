@@ -3,6 +3,8 @@
  * 按 spawn 规则新建入档、不改出场名单，该编号在同一事件块内指代这个新单位，未被占用的 u 编号沿用为正式编号。
  * spawn 写的 id 在解析时已丢弃，编号由插件分配。已有单位的编号永远不会被改指。
  */
+import type { Ride } from '../../engine/src/platforms.js';
+import type { UnitRecord } from './unit-state.js';
 import type { Suggestion } from './tags.js';
 import type { NarrativeSave } from './narrative-state.js';
 import type { SpawnItem } from './item-spec.js';
@@ -100,4 +102,29 @@ export function planNewUnits(save: NarrativeSave, proposalId: string, input: Sug
     }
   }
   return { events, created, handles, patches, items };
+}
+
+/** Bind public IDs or an exact, unique spawn name from this transaction. Never search archive names. */
+export function resolvePlatformReferences(plan: NewUnitPlan, proposalId: string, records: UnitRecord[], realId: (ref: string) => string): void {
+  const names = new Map<string,string[]>(), existing = new Set(records.map(r => r.id));
+  for (const [index,event] of plan.events.entries()) if (event.kind === 'spawn') {
+    const ids = Array.from({length:event.count},(_,n) => newUnitId(proposalId,index,n));
+    names.set(event.name,[...(names.get(event.name) ?? []),...ids]);
+  }
+  function bind(ride: Ride): Ride {
+    if (!ride || typeof ride.platformId !== 'string') throw Error('平台引用需要单位编号或本段唯一新建名称');
+    const ref = ride.platformId, resolved = realId(ref);
+    if (existing.has(resolved)) return {...ride, platformId:resolved};
+    const fresh = [...plan.handles].find(([,handle]) => handle === ref);
+    if (fresh) return {...ride, platformId:fresh[0]};
+    const matches = names.get(ref) ?? [];
+    if (matches.length !== 1) throw Error('平台「'+ref+'」'+(matches.length ? '在本段重名，请分批建档后使用编号' : '不存在，请使用已有单位编号或本段唯一新建名称'));
+    return {...ride, platformId:matches[0]!};
+  }
+  plan.events = plan.events.map(event => {
+    if (event.kind === 'spawn' && event.ride) return {...event,ride:bind(event.ride)};
+    if (event.kind === 'unit-set' && event.data.ride) return {...event,data:{...event.data,ride:bind(event.data.ride as Ride)}};
+    return event;
+  });
+  for (const [id,patch] of plan.patches) if (patch.ride) plan.patches.set(id,{...patch,ride:bind(patch.ride as Ride)});
 }

@@ -1,4 +1,5 @@
 import { diceMean } from '../dice.js';
+import { formatDisplayText } from '../display-text.js';
 /**
  * 武器生成器：与单位生成机制同构——武器原型参数 × 等级曲线 → 公式计算骰子表达式，全程审计。
  *
@@ -126,8 +127,9 @@ export const WEAPON_CLASS_ALIASES: Record<string, string[]> = {
 };
 export function resolveWeaponClass(name: string): string | undefined {
   const value = name.trim().toLowerCase();
-  return Object.values(WEAPON_CLASSES).find((c) => c.id === value || c.name === value)?.id
-    ?? Object.entries(SHIELD_CLASSES).find(([id, c]) => id === value || c.name === value)?.[0]
+  const idValue = value.replace(/\s+/g, '-');
+  return Object.values(WEAPON_CLASSES).find((c) => c.id === idValue || c.name === value)?.id
+    ?? Object.entries(SHIELD_CLASSES).find(([id, c]) => id === idValue || c.name === value)?.[0]
     ?? Object.entries(WEAPON_CLASS_ALIASES).find(([, names]) => names.includes(value))?.[0];
 }
 
@@ -287,8 +289,10 @@ export function buildWeaponDice(opts: BuildWeaponOpts): BuiltWeaponDice {
   };
 }
 
-export function classMismatchHint(name: string, mechanism: string): string {
+export function classMismatchHint(name: string, mechanism: string, text = formatDisplayText): string {
   const hint = nameClassHint(name);
   const label = (id: string) => WEAPON_CLASSES[id]?.name ?? SHIELD_CLASSES[id as ShieldClass].name;
-  return hint && hint !== mechanism ? '名称像' + label(hint) + '，当前按' + label(mechanism) + '结算，可在面板修改' : '';
+  return hint && hint !== mechanism ? text('名称像{suggested}，当前按{current}结算，可在面板修改', {
+    suggested: text(label(hint)), current: text(label(mechanism)),
+  }) : '';
 }

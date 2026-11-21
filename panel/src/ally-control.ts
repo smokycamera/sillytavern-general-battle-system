@@ -10,11 +10,13 @@ const defaultAi = (d: AllyControlDefaults, id: string) => d.allAllies && id !== 
 export function aiActsFor(b: SmallBattle, unit: Pick<Combatant, 'id' | 'side'>, d: AllyControlDefaults): boolean {
   const current=b.combatants.find(u=>u.id===unit.id), policy=current&&controlPolicy(current);
   if(policy==='charmed'||policy==='confused')return true;
-  return unit.side !== 'ally' || (b.allyAiControl.get(unit.id) ?? defaultAi(d, unit.id));
+  const owner = b.isTurnOf(unit.id) ? b.turnOrder[b.turnIndex] ?? unit.id : unit.id;
+  return unit.side !== 'ally' || (b.allyAiControl.get(owner) ?? defaultAi(d, owner));
 }
 
 /** 单独托管或收回一个我方单位；与默认相同时不留记录，之后随默认变化。 */
 export function setUnitAi(b: SmallBattle, id: string, ai: boolean, d: AllyControlDefaults): void {
+  if (b.isTurnOf(id)) id = b.turnOrder[b.turnIndex] ?? id;
   if (ai === defaultAi(d, id)) b.allyAiControl.delete(id); else b.allyAiControl.set(id, ai);
 }
 

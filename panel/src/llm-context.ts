@@ -1,4 +1,4 @@
-import { MAX_SMALL_UNITS, activeBattleUnits, assertBattleCapacity } from '../../engine/src/battle-limits.js';
+import { activeBattleUnits } from '../../engine/src/battle-limits.js';
 import { BattlefieldPlanError } from '../../engine/src/small/battlefield-plan.js';
 import { normalizeCommanderProfiles } from '../../engine/src/commander-profile.js';
 import { preparationDesignRequest, applyPreparationDesign, type PreparationDesignResult } from './llm-map-design.js';
@@ -85,17 +85,14 @@ export class LlmContextController {
     if (!connection.model) throw Error('请先拉取并选择模型，或填写模型 ID');
     // One layer = one completed user/assistant message, in the host's chronological order.
     const messages = input.messages.map(m => ({ ...m, text: stripThinking(m.text).trim() }));
-    // Never ask the model to choose an impossible >32-card grid, or spend tokens designing one.
-    assertBattleCapacity(input.roster,'mass');
-    const forcedMass = activeBattleUnits(input.roster).length > MAX_SMALL_UNITS;
     // Freeze the prepared scale when opted out, including scene-driven mode changes.
-    const contextInput = { ...input, messages, settings: normalizeContextSettings({ battleMode: forcedMass ? 'mass' : settings.selectBattleScale === false ? input.setup.mode : 'auto' }), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
+    const contextInput = { ...input, messages, settings: normalizeContextSettings({ battleMode: settings.selectBattleScale === false ? input.setup.mode : 'auto' }), windowSize: settings.windowSize, roles: ['user', 'assistant'], phase: 'preparation' as const };
     const { base, request } = encounterRequest(contextInput);
     if (!request) {
       if (settings.designMap && base.mode === 'small') throw new BattlefieldPlanError('所选范围没有可读取的正文，无法请求副API设计地图；请调整扫描范围或关闭LLM设计地图');
       return { ...base, detail: '所选范围没有可读取的已完成正文，沿用准备设置' };
     }
-    const fixedMass = forcedMass || settings.selectBattleScale === false && input.setup.mode === 'mass';
+    const fixedMass = settings.selectBattleScale === false && input.setup.mode === 'mass';
     const sides = !fixedMass && activeBattleUnits(input.roster).some(u => u.side === 'neutral') ? ['ally', 'enemy', 'neutral'] as const : ['ally', 'enemy'] as const;
     const designMap = settings.designMap === true && !fixedMass;
     request.fields = request.fields.filter(f => f.id !== 'enemy_ability' && !f.id.startsWith('style_') && !(designMap && f.id === 'map_layout'));
@@ -111,7 +108,7 @@ export class LlmContextController {
       request.fields.push({ id: 'size', question: '战场范围大小。', options: { ...SIZE_CHOICES } });
     }
     const coreRequest = { ...request, fields: [...request.fields] };
-    const designRequest = preparationDesignRequest(input.roster, forcedMass ? { ...settings, selectBattleScale: false } : settings, forcedMass ? { ...input.setup, mode: 'mass' } : input.setup, input.unitNotes);
+    const designRequest = preparationDesignRequest(input.roster, settings, input.setup, input.unitNotes);
     request.fields.push(...designRequest.fields);
     request.state = {
       encounter: request.state,
@@ -182,8 +179,8 @@ export class LlmContextController {
       const layOut = async (result: LlmEncounterContext, scene: BattlefieldScene, size: LayoutSize) => {
         step('layout');
         const ids = narrativeIds({ storage: input.roster, narrativeIdState: input.narrativeIdState });
-        const layout: LayoutContext = { scene, size, attacker: result.siegeAttacker, objectiveMode: result.objectiveMode,
-          units: layoutUnits(input.roster, ids.publicId, input.unitNotes), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
+        const layout: LayoutContext = { scene, size, environment:result.field, attacker: result.siegeAttacker, objectiveMode: result.objectiveMode,
+          units: layoutUnits(input.roster, ids.publicId, input.unitNotes, result.field), ...(result.vipName ? { vipName: result.vipName } : {}), map: layoutMapSize(scene, input.roster, size) };
         const final = attempt >= LAYOUT_TRIES, headline = `连续${LAYOUT_TRIES}次布置未能生成地图，只采用回答中能生成的部分`;
         const tried: LaidOut = { scene }, adjusted: string[] = [];
         laidOut = tried;

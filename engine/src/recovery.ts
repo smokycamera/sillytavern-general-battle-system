@@ -1,3 +1,6 @@
+import { isVehicleBody } from './vehicle-size.js';
+import { formatDisplayText } from './display-text.js';
+import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { lifeRecoveryScale } from './life-recovery.js';
 import { progression, stackingRevision } from './progression.js';
 import type { Combatant, ConditionDef, Trait } from './types.js';
@@ -34,15 +37,30 @@ function absorbCombatBarrier(unit: Combatant, amount: number, context?: DamageOv
   return absorbBarrier(unit, amount, barrierRatio(unit, context));
 }
 /** V4以真实生命结算；旧版继续使用人数换算，不改写进行中的旧战斗。 */
-export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmatch?:DamageOvermatch):number {
-  return applyMemberDamage(unit,amount,targets,false,overmatch).health;
+export function applyCombatDamage(unit:Combatant,amount:number,targets=1,overmatch?:DamageOvermatch,rolls?:CasualtyRolls):number {
+  return applyMemberDamage(unit,amount,targets,false,overmatch,false,rolls).health;
 }
 /** 伤亡中可救伤兵的比例：常规每2名救1名；医护编队每4名救3名。 */
 function woundedShare(unit: Combatant): [number, number] {
   return unit.rulesVersion === 'v2' && unit.scale !== 'hero' && activeTraitIds(unit).includes('medic') ? [3, 4] : [1, 2];
 }
+export function mergeWounded(root: Combatant, child: Combatant): void {
+  const percent = (root.woundedPercentRemainder ?? 0) + (child.woundedPercentRemainder ?? 0);
+  let carry = Math.floor(percent / 100);
+  root.woundedPercentRemainder = percent % 100;
+  if (root.formation && child.formation && !phase2Traits(root)) {
+    const [kept, group] = woundedShare(root);
+    const first = root.formation.woundedRemainder ?? 0, second = child.formation.woundedRemainder ?? 0;
+    carry += Math.floor(kept * (first + second) / group) - Math.floor(kept * first / group) - Math.floor(kept * second / group);
+    root.formation.woundedRemainder = (first + second) % group;
+  }
+  root.recoverableWounded = Math.min(root.base.hpMax-root.hp,(root.recoverableWounded ?? 0) + (child.recoverableWounded ?? 0) + carry);
+}
 /** 余量是尚未凑满一组的伤亡；只按累计总数取整，连续小额伤亡不会丢失或重复。 */
-function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { recoverable: number; remainder: number } {
+function woundedFromLoss(unit: Combatant, loss: number, remainder: number, rolls?: CasualtyRolls): { recoverable: number; remainder: number } {
+  if (rolls && !isVehicleBody(unit.body)) {
+    return { recoverable: !unit.nonLethal && (unit.hp > 0 || rolls.retainsWounded(unit)) ? rolls.roll(unit, loss) : 0, remainder };
+  }
   if (phase2Traits(unit)) {
     const level = effectiveTraitLevel(unit, 'medic'), percent = level ? traitParameter('medicRescue', level, unit.traitLevelModel) : 50;
     const total = (unit.woundedPercentRemainder ?? 0) + loss * percent;
@@ -52,41 +70,41 @@ function woundedFromLoss(unit: Combatant, loss: number, remainder: number): { re
   const [kept, group] = woundedShare(unit), carried = remainder % group, total = loss + carried;
   return { recoverable: Math.floor(kept * total / group) - Math.floor(kept * carried / group), remainder: total % group };
 }
-function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false,overmatch?:DamageOvermatch,barrierHandled=false):{health:number;overflow:number} {
-  if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount,unit.rulesVersion==='v2',overmatch,barrierHandled),overflow:0};
+function applyMemberDamage(unit:Combatant,amount:number,targets:number,overflow=false,overmatch?:DamageOvermatch,barrierHandled=false,rolls?:CasualtyRolls):{health:number;overflow:number} {
+  if(!hasMemberHealth(unit))return {health:applyHealthLoss(unit,amount,unit.rulesVersion==='v2',overmatch,barrierHandled,rolls),overflow:0};
   const result=damageMemberGroups(unit,targets > 0 ? barrierHandled ? Math.max(0,Math.round(amount)) : absorbCombatBarrier(unit,amount,overmatch) : 0,targets,overflow);
   if(result.health)moraleOnDamage(unit,result.health);
   if(result.casualties){
-    const wounded=woundedFromLoss(unit,result.casualties,unit.formation!.woundedRemainder??0);
-    unit.recoverableWounded=unit.nonLethal?(unit.recoverableWounded??0)+result.casualties:unit.hp>0?(unit.recoverableWounded??0)+wounded.recoverable:0;
+    const wounded=woundedFromLoss(unit,result.casualties,unit.formation!.woundedRemainder??0,rolls);
+    unit.recoverableWounded=unit.nonLethal?(unit.recoverableWounded??0)+result.casualties:unit.hp>0||rolls?.retainsWounded(unit)?(unit.recoverableWounded??0)+wounded.recoverable:0;
     unit.formation!.woundedRemainder=unit.nonLethal||unit.hp===0?0:wounded.remainder;
   }
   return result;
 }
-function settleUnshieldedPlan(unit: Combatant, directAmount: number, targets: number, overflow: boolean | undefined, splashAmount = 0, splashTargets = 0): { direct: number; splash: number; overflow: number } {
-  const direct = applyMemberDamage(unit, directAmount, targets, overflow, undefined, true);
-  const splash = splashAmount && splashTargets ? applyMemberDamage(unit, splashAmount, splashTargets, false, undefined, true).health : 0;
+function settleUnshieldedPlan(unit: Combatant, directAmount: number, targets: number, overflow: boolean | undefined, splashAmount = 0, splashTargets = 0, rolls?: CasualtyRolls): { direct: number; splash: number; overflow: number } {
+  const direct = applyMemberDamage(unit, directAmount, targets, overflow, undefined, true, rolls);
+  const splash = splashAmount && splashTargets ? applyMemberDamage(unit, splashAmount, splashTargets, false, undefined, true, rolls).health : 0;
   return { direct: direct.health, splash, overflow: direct.overflow };
 }
-export function applyDamagePlan(unit:Combatant,planned:MemberDamagePlan):{direct:number;splash:number;overflow:number;energyAbsorbed?:number;energySpent?:number;energyOverloaded?:number} {
+export function applyDamagePlan(unit:Combatant,planned:MemberDamagePlan,rolls?:CasualtyRolls):{direct:number;splash:number;overflow:number;energyAbsorbed?:number;energySpent?:number;energyOverloaded?:number} {
   if (unit.barrier?.stacking === 'layers-v1') {
     // V39：屏障先处理原始直击/溅射，再把余伤交给能量盾。后续生命结算不重复扣屏障。
     const direct = planned.targets > 0 ? absorbCombatBarrier(unit, planned.incomingDirect ?? planned.direct, planned.overmatch) : 0;
     const splash = planned.splashTargets ? absorbCombatBarrier(unit, planned.incomingSplash ?? planned.splash ?? 0, planned.overmatch) : 0;
     if (!unit.energyShield || !direct && !splash) return settleUnshieldedPlan(unit, Math.min(planned.direct, direct), planned.targets, planned.overflow,
-      Math.min(planned.splash ?? 0, splash), planned.splashTargets);
+      Math.min(planned.splash ?? 0, splash), planned.splashTargets, rolls);
     const remaining: MemberDamagePlan = { ...planned, direct: Math.min(planned.direct, direct), targets: direct ? planned.targets : 0,
       ...(planned.incomingDirect !== undefined ? { incomingDirect: direct } : {}),
       ...(planned.splash !== undefined ? { splash: Math.min(planned.splash, splash), splashTargets: splash ? planned.splashTargets : 0 } : {}),
       ...(planned.incomingSplash !== undefined ? { incomingSplash: splash } : {}) };
     const energy = absorbEnergyShield(unit, remaining), plan = energy.plan;
-    return { ...settleUnshieldedPlan(unit, plan.direct, plan.targets, plan.overflow, plan.splash, plan.splashTargets),
+    return { ...settleUnshieldedPlan(unit, plan.direct, plan.targets, plan.overflow, plan.splash, plan.splashTargets, rolls),
       ...(energy.absorbed || energy.overloaded ? { energyAbsorbed: energy.absorbed, energyOverloaded: energy.overloaded,
         ...(energy.spent !== energy.absorbed ? { energySpent: energy.spent } : {}) } : {}) };
   }
   const energy=absorbEnergyShield(unit,planned),plan=energy.plan;
-  const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow,plan.overmatch);
-  const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets,plan.overmatch):0;
+  const direct=applyMemberDamage(unit,unit.barrier ? plan.incomingDirect ?? plan.direct : plan.direct,plan.targets,plan.overflow,plan.overmatch,false,rolls);
+  const splash=plan.splash&&plan.splashTargets?applyCombatDamage(unit,unit.barrier ? plan.incomingSplash ?? plan.splash : plan.splash,plan.splashTargets,plan.overmatch,rolls):0;
   return {direct:direct.health,splash,overflow:direct.overflow,...(energy.absorbed||energy.overloaded?{energyAbsorbed:energy.absorbed,energyOverloaded:energy.overloaded,...(energy.spent!==energy.absorbed?{energySpent:energy.spent}:{})}:{})};
 }
 
@@ -110,7 +128,7 @@ export function settleWoundedOnDeath(unit: Combatant): void {
 }
 
 /** 实际损失唯一记账入口；V3跨分组累计半数伤兵余量，避免连发逐次取整丢失。 */
-export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch, barrierHandled = false): number {
+export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rulesVersion === 'v2', overmatch?:DamageOvermatch, barrierHandled = false, rolls?: CasualtyRolls): number {
   let loss = Math.min(unit.hp, barrierHandled ? Math.max(0, Math.round(amount)) : absorbCombatBarrier(unit, amount, overmatch));
   // 不屈（个体）：每战一次，致命伤以1点生命坚持。
   if (v2 && unit.scale === 'hero' && loss > 0 && loss >= unit.hp && unit.status === 'ready' && spendIndomitable(unit)) loss = unit.hp - 1;
@@ -122,8 +140,8 @@ export function applyHealthLoss(unit: Combatant, amount: number, v2 = unit.rules
       if (unit.formation) unit.formation.woundedRemainder = 0;
       return loss;
     }
-    const wounded = woundedFromLoss(unit, loss, isCohort(unit) ? unit.formation?.woundedRemainder ?? 0 : 0);
-    unit.recoverableWounded = unit.hp > 0 ? (unit.recoverableWounded ?? 0) + wounded.recoverable : 0;
+    const wounded = woundedFromLoss(unit, loss, isCohort(unit) ? unit.formation?.woundedRemainder ?? 0 : 0, rolls);
+    unit.recoverableWounded = unit.hp > 0 || rolls?.retainsWounded(unit) ? (unit.recoverableWounded ?? 0) + wounded.recoverable : 0;
     if (unit.formation) unit.formation.woundedRemainder = unit.hp > 0 ? wounded.remainder : 0;
   }
   return loss;
@@ -140,11 +158,13 @@ export function recoveryCapacity(unit: Health): number {
 export function applyRecovery(unit: Combatant, amount: number): number {
   if(hasMemberHealth(unit)){
     const restored=healMemberGroups(unit,Math.min(recoveryCapacity(unit),Math.max(0,Math.floor(amount))));
+    if (unit.unequippedWounded) unit.unequippedWounded = Math.min(unit.unequippedWounded,unit.recoverableWounded ?? 0);
     if(unit.status==='dying'&&unit.hp>0)unit.status='ready';return restored;
   }
   const restored = Math.min(recoveryCapacity(unit), Math.max(0, Math.floor(amount)));
   setStrength(unit, unit.hp + restored);
   if (unit.rulesVersion === 'v2' && unit.scale !== 'hero' && restored > 0) unit.recoverableWounded = (unit.recoverableWounded ?? 0) - restored;
+  if (unit.unequippedWounded) unit.unequippedWounded = Math.min(unit.unequippedWounded,unit.recoverableWounded ?? 0);
   if (unit.status === 'dying' && unit.hp > 0) unit.status = 'ready';
   return restored;
 }
@@ -173,7 +193,7 @@ export function beginLifestealRound(unit: Combatant, round: number, entry = fals
   else if (unit.lifestealState.round !== round) Object.assign(unit.lifestealState, {round, spent:0, remainder:0});
 }
 function lifestealBudget(attacker: Combatant, target: Combatant, lifeDamage: number): number {
-  if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || target.body === 'vehicle'
+  if (attacker.rulesVersion !== 'v2' || !(lifeDamage > 0) || attacker.status !== 'ready' || attacker.hp <= 0 || isVehicleBody(target.body)
     || !activeTraitIds(attacker).includes('lifesteal') || activeTraitIds(target).includes('inorganic')) return 0;
   const earned = lifeDamage * traitValue(attacker, 'lifesteal', 'lifestealRatio', .25);
   if (!stackingRevision(attacker)) return Math.min(recoveryCapacity(attacker), earned);
@@ -229,6 +249,7 @@ export function woundedAfterUpdate(unit: Health, hp: number, hpMax: number): num
 }
 
 /** brief 只给伤兵数：战报摘要随附的单位提示词已说明治疗不补回永久缺员。 */
-export function woundedLabel(unit: Health, brief = false): string {
-  return (unit.recoverableWounded ?? 0) > 0 ? `可救伤兵${unit.recoverableWounded}${brief ? '' : '，治疗不会补回其余缺员'}` : '';
+export function woundedLabel(unit: Health, brief = false, text = formatDisplayText): string {
+  const count = unit.recoverableWounded ?? 0;
+  return count > 0 ? text(brief ? '可救伤兵{count}' : '可救伤兵{count}，治疗不会补回其余缺员', { count }) : '';
 }

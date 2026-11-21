@@ -1,10 +1,13 @@
+import { isBodyKind } from '../../engine/src/vehicle-size.js';
+import { parseIssue, equipmentFields } from './equipment-batches.js';
+import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { WEAPON_CLASSES } from '../../engine/src/data/weapons.js';
 import { parseEnhancementSuffix, enhancementLabel, type Enhancements, type BonusKind } from '../../engine/src/enhancements.js';
 import { narrativeTraitLevel, traitLevelToken, traitRegistry, inferArchetype, type BodyKind } from '../../engine/src/index.js';
 /** V2正文：全文提取、格式容错、逐项诊断；真实身份和数值由事务层最终核对。 */
 import { parseAbilitySpec, parseEffectAttributes, parseSuggestionTags, type Suggestion } from './tags.js';
 import { resolveWeaponClass } from '../../engine/src/data/weapons.js';
-import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SCENE_UNITS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
+import { MAX_PROTOCOL_CHARS, MAX_PROTOCOL_EVENTS, MAX_SPAWN_COUNT, GROUPING_HINT } from './narrative-limits.js';
 import { scanProtocolTags, normalizedAttributes, serializeEvent, ProtocolSyntaxError, type ProtocolTag, type ProtocolAttribute } from './protocol-syntax.js';
 import { parseUnitSet, itemKey, UNIT_SET_ATTRIBUTES } from './unit-set.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
@@ -19,7 +22,8 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   learn: ['id', 'skills'],
   effect: ['id', 'effects', 'clear', 'rounds', 'battles', 'permanent'],
   unit_update: ['id', 'hp', 'hpMax', 'morale', 'state', 'clear', 'reason'],
-  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
+  recover: ['id', 'life', 'kill'],
+  spawn: ['id', 'name', 'side', 'scale', 'archetype', 'level', 'count', 'hp', 'hpMax', 'body', 'mount', 'platform', 'seats', 'aboard', 'speed', 'stabilized', 'protection', 'enchant', 'reserves', 'quality', 'shield', 'weapon', 'weapon2', 'armor', 'skills', 'traits', 'items', 'effects', 'rounds', 'battles', 'permanent'],
   field: ['env', 'light', 'note'],
   take: ['id', 'qty', 'note'],
   add: ['id', 'to', 'item', 'note', 'qty', 'type', 'spec', 'body', 'quality', 'enchant', 'stabilized', 'protection'],
@@ -202,7 +206,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
       if (tag.name === 'unit_set' && (hadOptionalList || unitSetArchetype || hadItems) && !Object.keys(attrs).some(key => !['id', 'reason'].includes(key))) continue;
       const event = validatedEvent(tag.name, attrs, warnings);
       const earlier = seen.get(event.raw);
-      if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update'].includes(event.kind))) {
+      if (earlier !== undefined && (earlier !== tag.block || ['deploy', 'unit-update', 'recover'].includes(event.kind))) {
         warnings.push('已合并重复展示的 ' + tag.name + ' 事件'); continue;
       }
       seen.set(event.raw, tag.block);
@@ -241,16 +245,14 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
     const event = events[i]!;
     const targets = event.kind === 'give' ? event.to ?? [] : event.kind === 'add' ? event.to ? [event.to] : [] : 'id' in event && event.id ? [event.id] : [];
     const unitId = targets.find(id => spawnIds.has(normalizeHandle(id)));
-    if (!['deploy', 'unit-update', 'unit-set', 'learn', 'effect', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
+    if (!['deploy', 'unit-update', 'unit-set', 'recover', 'learn', 'effect', 'bless', 'affect', 'unbless', 'unaffect', 'add', 'give'].includes(event.kind) || !unitId || !spawnIds.has(normalizeHandle(unitId))) continue;
     if (event.kind === 'deploy') { events.splice(i, 1); warnings.push(`已略过 deploy ${event.id}：这是本回复 spawn 自编的编号，新单位会自动上场`); }
     else {
       const message = `${unitId} 是本回复 spawn 自编的编号，新单位的编号由插件分配；要设置新单位请写进 spawn，或在下一次回复按单位资料里的编号修改`;
       errors.push(message); issues.set(eventTags.get(event)!, message);
     }
   }
-  const spawned = events.reduce((n, event) => n + (event.kind === 'spawn' ? event.count : 0), 0);
   if (events.length > MAX_PROTOCOL_EVENTS) errors.push('合并重复内容后共有' + events.length + '项事件，最多' + MAX_PROTOCOL_EVENTS + '项；请调整草稿，尚未入账');
-  if (spawned > MAX_SCENE_UNITS) errors.push('本批新建单位超过' + MAX_SCENE_UNITS + '，请调整草稿；' + GROUPING_HINT);
   // 批量限制指向触发限制的事件；不把首条错误复制到全部合法事件。
   if (scanned.tags.length > scanLimit) batchDiagnostics.push(eventDiagnostic(scanned.tags[scanLimit]!, errors[0]!));
   if (scanned.tags.reduce((n, tag) => n + tag.raw.length, 0) > MAX_PROTOCOL_CHARS && scanned.tags.length) {
@@ -258,10 +260,6 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
     batchDiagnostics.push(eventDiagnostic(tag, '事件内容超过' + MAX_PROTOCOL_CHARS + '字符，请精简草稿'));
   }
   if (events.length > MAX_PROTOCOL_EVENTS) batchDiagnostics.push(eventDiagnostic(eventTags.get(events[MAX_PROTOCOL_EVENTS]!)!, '事件超过' + MAX_PROTOCOL_EVENTS + '项，请精简草稿'));
-  if (spawned > MAX_SCENE_UNITS) {
-    let count = 0; const event = events.find(event => event.kind === 'spawn' && (count += event.count) > MAX_SCENE_UNITS)!;
-    batchDiagnostics.push(eventDiagnostic(eventTags.get(event)!, '本批新建单位超过' + MAX_SCENE_UNITS + '；' + GROUPING_HINT));
-  }
   // 略过的道具排在提示最前；整条回复只剩写不出的道具时作为待补全，不让它悄悄消失。
   if (skipped.length && !events.length && !errors.length) errors.push(skipped[0]!);
   warnings.unshift(...skipped);
@@ -282,7 +280,7 @@ export function parseProtocol(text: string, options: { diagnostics?: boolean } =
 
 const repairProbes: Record<string, Record<string, string>> = {
   spawn: { name: '规格校验', side: 'ally', scale: 'hero' }, unit_set: { id: '校验' },
-  unit_update: { id: '校验', hp: '1' }, deploy: { id: '校验' }, take: { id: '校验' }, add: { id: '校验' },
+  unit_update: { id: '校验', hp: '1' }, recover: { id: '校验', life: '1' }, deploy: { id: '校验' }, take: { id: '校验' }, add: { id: '校验' },
   give: { id: '校验' }, reforge: { id: '校验', spec: '剑L1' }, field: { env: 'plains' },
   learn: { id: '校验', skills: '治疗L1' }, effect: { id: '校验', effects: '校验:buffL1+攻击L1', battles: '1' }, bless: { id: '校验', traits: '快速', battles: '1' },
   affect: { id: '校验', effects: '诅咒', battles: '1' }, unbless: { id: '校验', source: '校验' }, unaffect: { id: '校验', source: '校验' },
@@ -337,6 +335,7 @@ export function recoverProtocol(text: string): { text: string; diagnostics: Prot
       probe.effects = '校验:buffL1+攻击L1';
       if (!probe.rounds && !probe.battles && !probe.permanent) probe.battles = '1';
     }
+    if (tag.name === 'recover' && attrs.kill !== undefined) { delete probe.life; probe.kill = '1'; }
     if (tag.name === 'add' && attrs.item !== undefined) { delete probe.id; probe.item = '规格校验'; }
     if (tag.name === 'spawn' && attrs.scale === 'company') {
       probe.scale = 'company'; probe.hpMax = /^\d+$/.test(attrs.hpMax ?? '') && Number(attrs.hpMax) > 0 ? attrs.hpMax! : '1000000000';
@@ -459,7 +458,24 @@ function naturalArmorSpec(armor: string, body?: string): { armor: string; writte
   return { armor: name + (tier ?? '') + spec.slice(match[0].length), written: match[0], tier };
 }
 
-function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[]): Suggestion {
+function validatedEvent(kind: string, attrs: Record<string, string>, warnings: string[], readEquipment = true): Suggestion {
+  if (kind === 'spawn' && readEquipment) {
+    const issues: NonNullable<Extract<Suggestion,{kind:'spawn'}>['equipmentIssues']> = {};
+    const first = {...attrs};
+    for (const field of ['weapon','weapon2','armor','shield'] as const) {
+      const entries = parseIssue(attrs[field],equipmentFields[field],attrs);
+      if (entries) { issues[equipmentFields[field]] = entries; first[field] = entries[0]!.text; }
+    }
+    if (Object.keys(issues).length) {
+      const event = validatedEvent(kind,first,warnings,false);
+      if (event.kind !== 'spawn') throw Error('配装单位无法建档');
+      // Keep normalized spawn fields and restore the full lists used to issue equipment.
+      for (const field of ['weapon','weapon2','armor','shield'] as const) {
+        if (issues[equipmentFields[field]]) first[field] = attrs[field]!;
+      }
+      return {...event, equipmentIssues:issues, raw:serializeEvent(kind,first)};
+    }
+  }
   if (kind === 'effect') {
     if (!attrs.id?.trim()) throw Error('effect需要已有单位id');
     const effect = parseEffectAttributes(attrs);
@@ -473,6 +489,17 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     return { kind:'unit-set', id:attrs.id!, data:fields || !items.length ? parseUnitSet(attrs) : {}, ...(items.length ? { items } : {}), reason:attrs.reason, raw:serializeEvent(kind,attrs) };
   }
   const integer = (key: string, min: number, max: number) => attrs[key] === undefined || (/^\d+$/.test(attrs[key]!) && Number.isSafeInteger(Number(attrs[key])) && Number(attrs[key]) >= min && Number(attrs[key]) <= max);
+  if (kind === 'recover') {
+    const id = attrs.id?.trim();
+    if (!id) throw Error('recover 需要已有单位 id');
+    if (attrs.kill !== undefined && attrs.life !== undefined) throw Error('recover 的 kill 与 life 须分开写');
+    const key = attrs.kill !== undefined ? 'kill' : 'life';
+    const value = attrs[key]?.toLowerCase();
+    if (!value || value !== 'all' && !integer(key, 1, Number.MAX_SAFE_INTEGER)) throw Error('recover 的 ' + key + ' 须为正整数或 all');
+    const amount = value === 'all' ? value : Number(value);
+    const raw = serializeEvent(kind, { id, [key]: String(amount) });
+    return key === 'kill' ? { kind: 'recover', id, kill: amount, raw } : { kind: 'recover', id, life: amount, raw };
+  }
   if (!integer('count', 1, MAX_SPAWN_COUNT)) throw new Error(`count是单位卡数量，须为1–${MAX_SPAWN_COUNT}；人数写hpMax。${GROUPING_HINT}`);
   const lifeInputMax = kind === 'unit_update' || kind === 'spawn' && attrs.scale === 'hero' ? Number.MAX_SAFE_INTEGER : 1e9;
   if (!integer('hp', 0, lifeInputMax) || !integer('hpMax', 1, lifeInputMax) || (attrs.level !== undefined && !/^[lL]?(?:10|[1-9])(?:[+-].*)?$/.test(attrs.level)) || !integer('qty', 1, Number.MAX_SAFE_INTEGER)) throw new Error(`${kind} 数值必须是范围内的完整整数`);
@@ -483,6 +510,12 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   }
   if (kind === 'add' && attrs.id !== undefined && (!attrs.id.trim() || ['item', 'spec', 'to', 'type', 'body', 'quality', 'enchant', 'stabilized', 'protection'].some(key => attrs[key] !== undefined))) throw new Error('add 补数量只写实物id、qty和可选note；新增物品写item，可用to指定接收单位');
   if (kind === 'reforge' && (!attrs.id?.trim() || !attrs.spec?.trim())) throw new Error('reforge 需要真实实物id与明确spec');
+  if (kind === 'reforge' && attrs.spec?.includes('×')) {
+    const counted = attrs.spec.match(/^(.*?)\s*×\s*([1-9]\d*)$/);
+    if (!counted || !Number.isSafeInteger(Number(counted[2]))) throw Error('reforge 末尾的件数须为正整数');
+    attrs.spec = counted[1]!.trim();
+    warnings.push('reforge 保留原实物数量，配发件数以 unit_set 为准');
+  }
   if ((kind === 'reforge' || kind === 'add') && attrs.spec !== undefined) {
     // 先保留具体错误原因，避免旧标签解析器将所有规格错误折叠成“无法解析”。
     parseItemSpecification(attrs.spec, attrs, warnings);
@@ -505,7 +538,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
     if (attrs.hp !== undefined && Number(attrs.hp) > Number(attrs.hpMax)) throw new Error('新单位当前值不能超过上限');
     if (attrs.weapon?.match(/[,，、;；]/)) {
       const weapons = attrs.weapon.split(/[,，、;；]/).map((v) => v.trim());
-      if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('weapon最多列两件武器；或分别使用weapon主武器与weapon2副武器');
+      if (weapons.length !== 2 || weapons.some((v) => !v) || attrs.weapon2) throw new Error('多种武器请在 weapon 中分别填写名称:规格×件数，以逗号分隔');
       attrs.weapon = weapons[0]!; attrs.weapon2 = weapons[1]!;
     }
     // 旧规格解析器会钳制等级或按自由文本回退；新正文先拒绝显式非法P，避免生成另一件装备。
@@ -519,7 +552,7 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
       if (!attrs[key]) continue;
       const spec = parseEnhancementSuffix(attrs[key]!.split(/[:：·｜|/／]/).at(-1)!, 'weapon').text.replace(/[lL]\s*\d+$/, '').trim();
       const mechanism = resolveWeaponClass(spec);
-      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7”或“激光枪:能量武器L3”，副武器用weapon2`);
+      if (!mechanism || !WEAPON_CLASSES[mechanism]) throw new Error(`${attrs.name}的${key}“${attrs[key]}”缺少支持的效果；请写“自定义名:剑L7×1”或“激光枪:能量武器L3×1”`);
     }
     for (const key of ['weapon', 'weapon2', 'shield']) if (attrs[key] && /[lL]\s*\d/.test(attrs[key]!)) parseItemSpecification(attrs[key]!, {}, warnings);
     if (attrs.armor && /[lL]\s*\d/.test(attrs.armor.split(/[:：·｜|/／]/).at(-1)!)) parseItemSpecification(attrs.armor, { type: 'armor' });
@@ -539,9 +572,14 @@ function validatedEvent(kind: string, attrs: Record<string, string>, warnings: s
   if (parsed.invalid.length || parsed.suggestions.length !== 1) throw new Error(`${kind} 字段或规格无法解析`);
   const event = parsed.suggestions[0]!;
   if (event.kind === 'spawn') {
-    if (attrs.body !== undefined && !['human', 'large', 'vehicle', 'giant'].includes(attrs.body)) throw new Error('未知身体/平台');
+    if (attrs.body !== undefined && !isBodyKind(attrs.body)) throw new Error('未知身体/平台');
     if (!integer('quality', 1, 5)) throw new Error('品质必须为1–5');
-    if (attrs.mount !== undefined && !['true', 'false'].includes(attrs.mount)) throw new Error('mount 必须是 true/false');
+    if (attrs.aboard !== undefined && attrs.mount !== undefined) throw Error('mount 与 aboard 只选一种');
+    if (attrs.platform !== undefined) event.platform = parsePlatform(attrs.platform);
+    if (attrs.seats !== undefined) { if (!integer('seats',1,Number.MAX_SAFE_INTEGER)) throw Error('seats 须为正整数'); event.seats = Number(attrs.seats); }
+    if (attrs.mount !== undefined && !['true','false'].includes(attrs.mount)) event.ride = {mode:'mount',platformId:attrs.mount};
+    if (attrs.aboard !== undefined && attrs.aboard !== 'false') event.ride = {mode:'aboard',platformId:attrs.aboard};
+    validatePlatform({...event,body:attrs.body as BodyKind});
     event.mount = attrs.mount === 'true';
     if (!integer('speed', 1, 5)) throw new Error('速度档位需要1–5整数');
     event.speedTier = attrs.speed === undefined ? undefined : Number(attrs.speed);

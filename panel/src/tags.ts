@@ -34,7 +34,7 @@ import { normalizeNarrativeSkill } from './spec-tolerance.js';
  */
 
 import { WEAPON_CLASSES, resolveWeaponClass, ABILITY_BLUEPRINTS, DEFAULT_BLUEPRINTS, categoryLabel, type Category, narrativeTraitLevel, standardConditionMap, validateTraitSource, type TraitDuration, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
-import { parseItemSpecification, splitItemSpecification, parseSpawnItem, splitSpawnItems, type SpawnItem } from './item-spec.js';
+import { armorSpecificationTier, parseItemSpecification, splitItemSpecification, parseSpawnItem, splitSpawnItems, type SpawnItem } from './item-spec.js';
 
 /** consumable、accessory 只在旧候选里出现；新道具一律 item。 */
 export type LootType = 'weapon' | 'armor' | 'item' | 'consumable' | 'accessory' | 'material' | 'quest' | 'misc';
@@ -58,6 +58,7 @@ export type Suggestion =
   | { kind: 'field'; env: FieldEnv; light?: 'day' | 'night'; note?: string; raw: string }
   /** 从储存器调取一个已有单位进入上场编制。id 是储存器稳定身份。 */
   | { kind: 'deploy'; id: string; name?: string; raw: string }
+  | ({ kind: 'recover'; id: string; raw: string } & ({ life: number | 'all'; kill?: never } | { kill: number | 'all'; life?: never }))
   /** 正文补员、扩编或恢复状态后，按稳定身份更新储存器/编制/当前战场。 */
   | {
       kind: 'unit-update';
@@ -78,6 +79,9 @@ export type Suggestion =
       bonuses?: Enhancements; weaponBonuses?: Enhancements; weapon2Bonuses?: Enhancements; armorBonuses?: Enhancements;
       body?: BodyKind;
       mount?: boolean;
+      platform?: import('../../engine/src/platforms.js').Platform;
+      seats?: number;
+      ride?: import('../../engine/src/platforms.js').Ride;
       speedTier?: number;
       weaponStabilized?: boolean;
       weaponEnchantment?: 'thermal' | 'arcane';
@@ -109,6 +113,7 @@ export type Suggestion =
       weaponLevel?: number;
       /** 副武器（可选）：weapon2="短剑:剑L3"——仅当角色设定确实远近双持时声明 */
       weapon2?: string;
+      equipmentIssues?: Partial<Record<'primary'|'sidearm'|'armor'|'shield',import('./equipment-batches.js').EquipmentIssue[]>>;
       /** weapon2 解析出的显示名 */
       weapon2Name?: string;
       /** weapon2 解析出的武器分类 */
@@ -272,7 +277,7 @@ const ARMOR_TIER_ALIASES: { tier: 0 | 1 | 2 | 3 | 4; kws: string[] }[] = [
 function armorTierByName(name: string): 0 | 1 | 2 | 3 | 4 | undefined {
   const n = name.trim();
   if (!n) return undefined;
-  const exact = ARMOR_TIER_NAMES.indexOf(n as (typeof ARMOR_TIER_NAMES)[number]);
+  const exact = armorSpecificationTier(n);
   if (exact >= 0) return exact as 0 | 1 | 2 | 3 | 4;
   for (const { tier, kws } of ARMOR_TIER_ALIASES) if (kws.some((k) => n.includes(k))) return tier;
   return undefined;
@@ -434,7 +439,7 @@ export function parseEffectAttributes(attrs: Record<string, string>): { effects?
 // ---------- 战场环境 ----------
 
 /** 环境声明 → 面板 field 标签键 */
-export const FIELD_ENV_KEYS = ['plains', 'urban', 'siege', 'night', 'forest', 'mountain'] as const;
+export const FIELD_ENV_KEYS = ['plains', 'urban', 'siege', 'night', 'forest', 'mountain', 'sea', 'cosmos'] as const;
 export type FieldEnv = (typeof FIELD_ENV_KEYS)[number];
 const FIELD_ENV_KWS: Record<FieldEnv, string[]> = {
   plains: ['野战', '平原', '原野', '野外', '开阔'],
@@ -442,6 +447,7 @@ const FIELD_ENV_KWS: Record<FieldEnv, string[]> = {
   siege: ['攻城', '围城', '攻坚', '要塞', '城塞'],
   night: ['夜战', '夜晚', '夜间', '黑夜', '夜袭'],
   forest: ['森林', '林地', '树林'],
+  sea: ['海洋','海域','海上'], cosmos: ['太空','外层空间','星际'],
   mountain: ['山地', '山岭', '山岳'],
 };
 

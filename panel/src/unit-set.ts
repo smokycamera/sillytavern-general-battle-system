@@ -1,8 +1,11 @@
+import { BODY_LABELS, isVehicleBody } from '../../engine/src/vehicle-size.js';
+import { assignIssue, parseIssue, issueShortage } from './equipment-batches.js';
+import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
 import type { Ability, Combatant, EquipmentSlot, ItemMechanics, ItemSpecification } from '../../engine/src/index.js';
 import { compileItem, equipmentReason, resolveTraitId, traitRegistry, standardConditionMap, parseDice, generateUnit, narrativeTraitLevel, isGradedTrait, validateTraitLevels, type GenerateInput } from '../../engine/src/index.js';
-import { validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
+import { parseEnhancementSuffix, validateEnhancements, validateChannelProtection, type Enhancements } from '../../engine/src/enhancements.js';
 import { anchoredWeapon } from '../../engine/src/power-anchors.js';
 import { MAX_PREPARED_SKILLS, compileSkill, resolvePreparedSkills, skillDefinitionId } from '../../engine/src/skill-catalog.js';
 import { upgradeCombatSkills } from '../../engine/src/skill-upgrade.js';
@@ -11,7 +14,7 @@ import { setMemberMaximum } from '../../engine/src/member-health.js';
 import { isEnduranceModel, spCapacity, fatigueLimit } from '../../engine/src/resources.js';
 import { xpProgress } from '../../engine/src/xp.js';
 import { materializeUnitRecord, unitRecordFromCombatant, combatantFromUnknown } from './unit-state.js';
-import { fitsEquipmentSlot, prepareInventoryState, validateInventoryItem, type InventoryItem } from './inventory-state.js';
+import { fitsEquipmentSlot, splitInventoryBatch, prepareInventoryState, validateInventoryItem, type InventoryItem } from './inventory-state.js';
 import { parseItemSpecification, splitItemSpecification } from './item-spec.js';
 import { parseAbilitySpec } from './tags.js';
 import { narrativeIds } from './narrative-ids.js';
@@ -20,8 +23,8 @@ import { normalizeUnitClear, clearUnitEffects } from './unit-clear.js';
 
 type ObjectData = Record<string, unknown>;
 /** items 不是档案字段：交给单位的道具在入账时另行处理（item-handover.ts）。 */
-export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'clear', 'body', 'mount', 'speed', 'weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
-const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
+export const UNIT_SET_ATTRIBUTES = ['id', 'data', 'reason', 'name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'state', 'clear', 'body', 'mount', 'platform', 'seats', 'aboard', 'speed', 'weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'enchant', 'stabilized', 'protection', 'skills', 'traits', 'retired', 'note', 'items'] as const;
+const direct = ['name', 'side', 'scale', 'archetype', 'level', 'xp', 'xpValue', 'hp', 'morale', 'status', 'body', 'mount', 'platform', 'seats', 'ride', 'speedTier', 'tags', 'base', 'bonuses', 'resources', 'conditions', 'traits', 'traitLevels', 'traitSources', 'recoverableWounded', 'formation', 'abilityState', 'fatigue'] as const;
 const special = ['xpProgress', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'moraleMax', 'state', 'clear', 'speed', 'weapon2', 'weapon', 'sidearm', 'armor', 'shield', 'enchant', 'stabilized', 'protection', 'skills', 'abilities', 'preparedAbilityIds', 'retired', 'note'];
 const object = (value: unknown): value is ObjectData => !!value && typeof value === 'object' && !Array.isArray(value);
 function requireObject(value: unknown, label: string): ObjectData { if (!object(value)) throw Error(label + '必须为对象'); return value; }
@@ -45,18 +48,36 @@ function merge(target: ObjectData, patch: ObjectData): ObjectData {
   const next = structuredClone(target);
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete next[key];
-    else next[key] = key !== 'bonuses' && key !== 'traitLevels' && object(value) && object(next[key]) ? merge(next[key] as ObjectData, value) : structuredClone(value);
+    else next[key] = key !== 'platform' && key !== 'bonuses' && key !== 'traitLevels' && object(value) && object(next[key]) ? merge(next[key] as ObjectData, value) : structuredClone(value);
   }
   return next;
 }
 export function parseUnitSet(attrs: Record<string, string>): ObjectData {
   if (!attrs.id?.trim()) throw Error('unit_set需要已有单位id');
   const data = attrs.data === undefined ? {} : requireObject(JSON.parse(attrs.data), 'data');
-  for (const [key, text] of Object.entries(attrs)) {
+  for (const [key, input] of Object.entries(attrs)) {
     if (['id', 'data', 'reason', 'items'].includes(key)) continue;
-    const field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
+    let field = ({ weapon2: 'sidearm', shieldSpec: 'shield', state: 'status', speed: 'speedTier' } as Record<string,string>)[key] ?? key;
+    let text = input;
+    if (field === 'level') {
+      const training = parseEnhancementSuffix('L' + input, 'unit');
+      text = training.text.slice(1);
+      if (training.bonuses) {
+        const existing = data.bonuses;
+        const entries = Object.entries(training.bonuses);
+        if (existing !== undefined && (!object(existing) || Object.keys(existing).length !== entries.length
+          || entries.some(([stat, points]) => existing[stat] !== points))) throw Error('level修正与data.bonuses冲突');
+        data.bonuses = training.bonuses;
+      }
+    }
     let value: unknown = text;
-    if (['level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
+    if (field === 'platform') value = parsePlatform(text);
+    if (field === 'aboard' || field === 'mount' && !['true','false'].includes(text)) {
+      if (attrs.aboard !== undefined && attrs.mount !== undefined) throw Error('mount 与 aboard 只选一种');
+      value = text === 'false' ? null : { mode: field === 'aboard' ? 'aboard' : 'mount', platformId: text };
+      field = 'ride';
+    }
+    if (['seats', 'level', 'xp', 'xpProgress', 'xpValue', 'hp', 'hpMax', 'memberHp', 'atk', 'def', 'spd', 'morale', 'moraleMax', 'speedTier'].includes(field)) {
       if (!/^[+-]?\d+(?:\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw Error(field + '需要明确的有限数值');
       value = Number(text);
     }
@@ -72,6 +93,7 @@ export function parseUnitSet(attrs: Record<string, string>): ObjectData {
 export function validateUnitPatch(data: ObjectData): void {
   cleanJson(data); keys(data, [...direct, ...special], 'unit_set.data');
   if (!Object.keys(data).length) throw Error('unit_set没有修改字段');
+  if (data.level !== undefined) number(data.level, '训练等级', 1, 10, true);
   if (data.clear !== undefined) normalizeUnitClear(data.clear);
   if (data.enchant !== undefined) enumeration(data.enchant, ['none','thermal','arcane'], '附魔');
   if (data.protection !== undefined) enumeration(data.protection, ['balanced','kinetic','thermal','arcane'], '防护类型');
@@ -85,7 +107,7 @@ function configureGear(mechanics: ItemMechanics | undefined, unit: Combatant, da
   const context = { id: value.id, name: value.name, seed: recipe.seed, body: recipe.size, quality: recipe.quality, bonuses: recipe.bonuses,
     damageModel: unit.damageModel, numericModel: recipe.numericModel, loadModel: recipe.loadModel, variance: recipe.variance ?? false as const, noVariance: recipe.noVariance, creatingUnit: true };
   if (mechanics.kind === 'weapon') {
-    if (data.stabilized === true && (unit.body !== 'vehicle' || (mechanics.value.range ?? 1) <= 1 && mechanics.value.recipe?.mechanism !== 'sprayer')) throw Error('稳定装置需要载具的射击武器');
+    if (data.stabilized === true && (!isVehicleBody(unit.body) || (mechanics.value.range ?? 1) <= 1 && mechanics.value.recipe?.mechanism !== 'sprayer')) throw Error('稳定装置需要载具的射击武器');
     const compiled = compileItem({ kind: 'weapon', mechanism: recipe.mechanism, power: recipe.power,
       enchantment: (data.enchant ?? recipe.enchantment ?? 'none') as 'none'|'thermal'|'arcane', stabilized: (data.stabilized ?? recipe.stabilized) as boolean | undefined }, context);
     if (compiled.kind !== 'weapon') throw Error('武器配置损坏');
@@ -129,7 +151,7 @@ function gearValue(input: unknown, previous: ItemMechanics | undefined, slot: Eq
     }
     number(spec.power, '装备等级', 1, 10, true);
     if (spec.quality !== undefined) number(spec.quality, '装备品质', 1, 5, true);
-    if (spec.body !== undefined) enumeration(spec.body, ['human','large','vehicle','giant'], '装备体型');
+    if (spec.body !== undefined) enumeration(spec.body, Object.keys(BODY_LABELS), '装备体型');
     if (spec.kind === 'armor') number(spec.tier, '护甲档位', 0, 4, true);
     if (spec.kind === 'weapon' && spec.stabilized !== undefined && typeof spec.stabilized !== 'boolean') throw Error('稳定装置须为布尔值');
     if (spec.kind === 'weapon' && spec.enchantment !== undefined) enumeration(spec.enchantment, ['none','thermal','arcane'], '附魔');
@@ -184,7 +206,7 @@ function wantedGear(input: unknown): WantedGear | undefined {
 export const itemKey = (name: string) => name.replace(/\s+/g, '').toLowerCase();
 const bonusKey = (bonuses?: Enhancements) => JSON.stringify(Object.entries(bonuses ?? {}).filter(([, value]) => value).sort(([a], [b]) => a.localeCompare(b)));
 /** 只比较正文写出的部分；相同时直接换上这件，不重铸、不丢附魔等写不出的属性。 */
-function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification | undefined): boolean {
+export function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification | undefined): boolean {
   if (!mechanics || !spec || mechanics.kind === 'item' || spec.kind === 'item' || mechanics.kind !== spec.kind) return false;
   const recipe = mechanics.value.recipe;
   const mechanism = spec.kind === 'weapon' ? spec.mechanism : spec.kind === 'armor' ? 'armor:' + spec.tier : spec.mechanism ?? 'shield';
@@ -197,6 +219,9 @@ function sameGear(mechanics: ItemMechanics | undefined, spec: ItemSpecification 
 export function unitSetReferencesGear(field: string, input: unknown, item: InventoryItem, realId: (id: string) => string, reforgedNames?: ReadonlyMap<string, string>): boolean {
   const kind = ['weapon', 'weapon2', 'sidearm'].includes(field) ? 'weapon' : field;
   if (item.mechanics?.kind !== kind || !['weapon', 'armor', 'shield'].includes(kind)) return false;
+  if (typeof input === 'string' && /[×,，、;；]/.test(input)) {
+    return input.split(/[,，、;；]/).some(entry => unitSetReferencesGear(field,entry.split('×')[0]!.trim(),item,realId,reforgedNames));
+  }
   const wanted = wantedGear(input);
   if (!wanted || !wanted.spec && !wanted.referenceOnly || wanted.spec && wanted.spec.kind !== kind) return false;
   return wanted.name ? item.id === realId(wanted.name) || itemKey(item.name) === itemKey(wanted.name)
@@ -280,16 +305,16 @@ function validateAbility(a: Ability): void {
 }
 
 /** 重算训练/身体/强化的标准部分；hero生命取现有上限与新标准较大值，显式base随后覆盖。 */
-function rebase(unit: Combatant, data: ObjectData): void {
-  if (!['level','body','archetype','scale','bonuses','traits'].some(key=>Object.hasOwn(data,key))) return;
+export function rebaseUnitStats(unit: Combatant, data: ObjectData): void {
+  if (!['level','body','archetype','scale','platform','bonuses','traits'].some(key=>Object.hasOwn(data,key))) return;
   const registry=traitRegistry();
   const baseline=(value: ObjectData) => {
     strings(value.traits,'traits');
     const traits=value.traits.map(name=>{const id=resolveTraitId(name,registry);if(!id)throw Error('未知特质：'+name);return id;});
-    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,numericModel:unit.numericModel,loadModel:unit.loadModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
+    const input={name:unit.name,side:unit.side,rulesVersion:'v2',damageModel:unit.damageModel,numericModel:unit.numericModel,loadModel:unit.loadModel,scale:value.scale,body:value.body,archetype:value.archetype,level:value.level,platform:value.platform,bonuses:value.bonuses??undefined,traits,armorTier:0} as GenerateInput;
     return generateUnit(input,{seed:'unit-set-baseline',registry,noVariance:true}).unit;
   };
-  const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
+  const old=baseline(unit as unknown as ObjectData), changed=merge(unit as unknown as ObjectData,Object.fromEntries(['level','body','archetype','scale','platform','bonuses','traits'].filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]))), next=baseline(changed);
   for(const key of ['atk','def','spd'] as const)unit.base[key]+=next.base[key]-old.base[key];
   if(next.scale==='hero')unit.base.hpMax=Math.max(1,Math.min(singleLifeLimit(unit.damageModel),unit.numericModel ? unit.base.hpMax + next.base.hpMax - old.base.hpMax : Math.max(unit.base.hpMax,next.base.hpMax)));
   if(next.scale==='company'||unit.numericModel)unit.base.moraleMax=(unit.base.moraleMax??old.base.moraleMax??0)+(next.base.moraleMax??0)-(old.base.moraleMax??0);
@@ -303,6 +328,7 @@ function rebase(unit: Combatant, data: ObjectData): void {
 /** given：同一回复 add 刚入库的实物编号，换装时优先取用；notices 收集换装说明。 */
 export const UNIT_EQUIPMENT_FIELDS = ['weapon', 'weapon2', 'sidearm', 'armor', 'shield'] as const;
 export interface UnitSetContext {
+  stockTransaction?: boolean;
   given?: ReadonlySet<string>; notices?: string[]; transferred?: ReadonlySet<string>;
   reforgedNames?: ReadonlyMap<string, string>;
   reforgedEquipment?: readonly InventoryItem[];
@@ -351,7 +377,9 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     if (base[key] !== undefined && base[key] !== data[key]) throw Error(key + '与base冲突'); base[key] = data[key];
   }
   if (data.base !== undefined) keys(requireObject(data.base,'base'), ['atk','def','spd','hpMax','moraleMax'], 'base');
-  rebase(unit,data);
+  if (data.mount !== undefined) data.ride ??= null;
+  if (data.ride !== undefined && data.mount === undefined) data.mount = false;
+  rebaseUnitStats(unit,data);
   const fields = Object.fromEntries(direct.filter(key => Object.hasOwn(data,key)).map(key => [key,data[key]]));
   unit = merge(unit as unknown as ObjectData, fields) as unknown as Combatant;
   if (data.clear !== undefined) clearUnitEffects(unit, data.clear, sourceId);
@@ -359,7 +387,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if(data.morale===undefined&&unit.base.moraleMax!==undefined)unit.morale=Math.min(unit.morale??unit.base.moraleMax,unit.base.moraleMax);
   if (typeof unit.name !== 'string' || !unit.name.trim()) throw Error('单位名称不能为空');
   enumeration(unit.side,['ally','enemy','neutral'],'side'); enumeration(unit.scale,['hero','company'],'scale');
-  enumeration(unit.archetype ?? 'infantry',['infantry','ranged','mobile'],'archetype'); enumeration(unit.body ?? 'human',['human','large','vehicle','giant'],'body');
+  enumeration(unit.archetype ?? 'infantry',['infantry','ranged','mobile'],'archetype'); enumeration(unit.body ?? 'human',Object.keys(BODY_LABELS),'body');
   number(unit.level,'训练等级',1,10,true); number(unit.base.hpMax,'hpMax',1,unit.scale==='hero'?singleLifeLimit(unit.damageModel):1e9,true);
   number(unit.hp,'hp',0,unit.base.hpMax,true);
   for (const key of ['atk','def','spd'] as const) number(unit.base[key],key);
@@ -367,10 +395,13 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   if (unit.morale !== undefined) number(unit.morale,'morale',0,unit.base.moraleMax ?? Number.MAX_SAFE_INTEGER);
   if (unit.speedTier !== undefined) number(unit.speedTier,'speedTier',1,5,true);
   if (unit.mount !== undefined && typeof unit.mount !== 'boolean') throw Error('mount须为布尔值');
+  validatePlatform(unit);
   validateEnhancements(unit.bonuses,'unit');
   for (const key of ['xp','xpValue'] as const) if (unit[key] !== undefined) number(unit[key],key,0);
-  if (data.xp !== undefined || data.xpProgress !== undefined || data.level !== undefined) {
-    const progress = data.xpProgress ?? (data.level !== undefined ? 0 : Math.max(0,oldProgress + Number(data.xp ?? unit.xp ?? 0) - Number(previous.xp ?? 0)));
+  // 同级设置本体修正保留进度；单独指定等级仍沿用显式重置的语义。
+  const resetProgress = data.level !== undefined && (data.level !== previous.level || data.bonuses === undefined);
+  if (data.xp !== undefined || data.xpProgress !== undefined || resetProgress) {
+    const progress = data.xpProgress ?? (resetProgress ? 0 : Math.max(0,oldProgress + Number(data.xp ?? unit.xp ?? 0) - Number(previous.xp ?? 0)));
     number(progress,'xpProgress',0);
     // XP是累计账本；显式改等级不偷偷换算等级。下次经验结算再按本级进度升级。
     unit.xpCurve = 'effort-v1'; unit.xpLevelStart = (unit.xp ?? 0) - progress;
@@ -394,7 +425,14 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     if (!Object.keys(unit.traitLevels).length) delete unit.traitLevels;
   }
   if (data.formation !== undefined) keys(requireObject(data.formation,'formation'), ['members','capacity','memberHp','health','woundedRemainder'], 'formation');
-  if (unit.scale === 'hero') { if (data.formation || data.memberHp !== undefined) throw Error('个体不使用formation/memberHp'); delete unit.formation; }
+  if (unit.scale === 'hero') {
+    if (data.formation || data.memberHp !== undefined) throw Error('个体不使用formation/memberHp');
+    delete unit.formation;
+    if (previous.scale !== 'hero') {
+      if (data.recoverableWounded === undefined) delete unit.recoverableWounded;
+      delete unit.woundedPercentRemainder;
+    }
+  }
   else {
     unit.combatModel = 'cohort-v2';
     unit.formation ??= { members:unit.hp,capacity:unit.base.hpMax,memberHp:Math.min(singleLifeLimit(unit.damageModel),nominalLife(unit)) };
@@ -435,6 +473,28 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const input = Object.hasOwn(data,key) ? data[key] : equipped?.id;
     // 内部锁定使用完整实物id（可能含冒号），先识别引用，不能把id当作“名称:规格”拆开。
     const referenced = typeof input === 'string' ? next.inventory!.find(item => item.id === input) : undefined;
+    const singleHeroItem = unit.scale === 'hero' && typeof input === 'string' && !/[×,，、;；]/.test(input)
+      && (equipped?.qty ?? 1) === 1;
+    const entries = !referenced && !singleHeroItem && parseIssue(input,slot,data);
+    if (entries && ally && options.stockTransaction) {
+      const shortage = issueShortage(next.inventory!,id,slot,entries,key === 'weapon' && !Object.hasOwn(data,'sidearm'));
+      if (shortage) {
+        options.notices?.push(unit.name+'的配装未改：'+shortage);
+        continue;
+      }
+    }
+    // A canonical weapon list covers the former secondary slot as well. Old two-field edits keep their original targets.
+    if (key === 'weapon' && Object.hasOwn(data,'weapon') && !Object.hasOwn(data,'sidearm')) {
+      for (const item of next.inventory!) if (item.equippedTo?.unitId === id && item.equippedTo.slot === 'sidearm') delete item.equippedTo;
+    }
+    if (entries) {
+      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId,true,unit.body,!(ally && options.stockTransaction));
+      continue;
+    }
+    if (Object.hasOwn(data,key)) {
+      const others = next.inventory!.filter(i => i !== equipped && i.equippedTo?.unitId === id && i.equippedTo.slot === slot);
+      for (const item of others) delete item.equippedTo;
+    }
     const wanted: WantedGear | undefined = referenced ? { name: String(input), referenceOnly: true, values: false } : wantedGear(input);
     if (wanted?.name) wanted.itemId = ids.realId(wanted.name);
     const incoming = wanted ? stashedGear(next.inventory!.filter(item => transferred.has(item.id) && item.assignedTo === id), id, slot, wanted, transferred) : undefined;
@@ -442,8 +502,9 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const keep = !incoming && !!equipped && !!wanted?.name && (equipped.id === wanted.itemId || itemKey(equipped.name) === itemKey(wanted.name));
     const stashed = incoming ?? (ally && wanted && !keep ? stashedGear(next.inventory!, id, slot, wanted, given) : undefined);
     // 多件同名叙事记录只拿出一件补上规格。
-    const split = !!stashed && !stashed.mechanics && stashed.qty > 1;
-    const old = split ? undefined : stashed ?? equipped;
+    const selected = stashed ?? equipped;
+    const split = Object.hasOwn(data,key) && (stashed || keep) && selected && selected.qty > 1;
+    const old = split ? splitInventoryBatch(selected,`equipment:${sourceId}:${id}:${slot}:split`,1) : selected;
     const itemId = old?.id ?? `equipment:${sourceId}:${id}:${slot}`;
     const frozen = old?.mechanics && wanted && !wanted.values && (wanted.referenceOnly && (stashed || keep)
       || incoming && typeof input === 'string' && wanted.spec?.kind === incoming.mechanics?.kind
@@ -451,11 +512,11 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const baseMechanics = frozen ? old!.mechanics : input === undefined && configure ? undefined : gearValue(input,old?.mechanics,slot,itemId,unit,sourceId);
     const mechanics = configure ? configureGear(baseMechanics, unit, data) : baseMechanics;
     if (mechanics && mechanics.kind !== 'item') {
-      const item = { ...old, ...(split ? { note: stashed!.note } : {}), id:itemId, name:('name' in mechanics.value ? mechanics.value.name : undefined) || '盾牌',qty:1,lootType:mechanics.kind==='weapon'?'weapon':'armor',mechanics,assignedTo:id,equippedTo:{unitId:id,slot},revision:(old?.revision??0)+1 };
+      const item = { ...old, id:itemId, name:('name' in mechanics.value ? mechanics.value.name : undefined) || '盾牌',qty:Object.hasOwn(data,key) ? 1 : old?.qty ?? 1,lootType:mechanics.kind==='weapon'?'weapon':'armor',mechanics,assignedTo:id,equippedTo:{unitId:id,slot},revision:(old?.revision??0)+1 };
       validateInventoryItem(item);
       delete item.history;
-      if (split) stashed!.qty--;
-      if (stashed && equipped) delete equipped.equippedTo;
+      if (split) selected.qty--;
+      if ((stashed || split) && equipped) delete equipped.equippedTo;
       next.inventory = [...next.inventory!.filter(i=>i.id!==itemId),item];
       (unit as unknown as ObjectData)[key] = structuredClone(mechanics.value);
       if (stashed) options.notices?.push(`${unit.name}换上库存里的「${item.name}」${equipped ? `，原来的「${equipped.name}」卸下留在库存` : ''}`);
@@ -482,9 +543,6 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
 
   if(!Array.isArray(unit.abilityState))throw Error('abilityState须为数组');
   for(const s of unit.abilityState) { if(typeof s.abilityId!=='string'||!s.abilityId)throw Error('冷却状态缺少技能身份'); number(s.cdLeft,'cdLeft',0,Number.MAX_SAFE_INTEGER,true); number(s.used,'used',0,Number.MAX_SAFE_INTEGER,true); }
-  if (['weapon','sidearm','armor','shield','body','scale'].some(key=>Object.hasOwn(data,key))) {
-    const reason=equipmentReason(unit); if(reason)throw Error(reason);
-  }
   // 校验精确值在写入前执行，避免归档函数的旧档容错替调用者截断或修复。
   combatantFromUnknown(unit);
   const record=unitRecordFromCombatant(unit,previous,{kind:'update',sourceId});
@@ -496,6 +554,10 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   next.storage=next.storage!.map(r=>r.id===id?record:r);
   for (const key of ['protagonistId','commanderId'] as const) if (next[key] === id && unit.side !== 'ally') delete next[key];
   const result=prepareInventoryState(next) as NarrativeSave;
-  materializeUnitRecord(result.storage!.find(r=>r.id===id)!,registry);
+  const applied = materializeUnitRecord(result.storage!.find(r=>r.id===id)!,registry);
+  if (['weapon','sidearm','armor','shield','body','scale'].some(key=>Object.hasOwn(data,key))) {
+    const reason = equipmentReason(applied);
+    if (reason) throw Error(reason);
+  }
   return result;
 }

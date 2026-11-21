@@ -1,29 +1,41 @@
-import type {BodyKind,Combatant} from './types.js';
+import { baseBody } from './vehicle-size.js';
+import { availableCopies } from './equipment-batches.js';
+import type {Combatant} from './types.js';
 import type {MemberDamagePlan} from './recovery.js';
 import {diceAvg,rebuildDice,type ShieldClass} from './data/weapons.js';
 import {curveAt} from './data/curves.js';
 import {UNIFIED_WOUNDS,powerIndex} from './balance.js';
 import {isArmsV2,isArmsV3} from './arms-model.js';
 
-export type ShieldBearer = Pick<Combatant,'shield'> & Partial<Pick<Combatant,'weapon'|'sidearm'|'armsModel'|'shieldDurability'|'scale'|'hp'|'body'>>;
+export type ShieldBearer = Pick<Combatant,'shield'> & Partial<Pick<Combatant,'weapon'|'sidearm'|'armsModel'|'shieldDurability'|'scale'|'hp'|'body'|'equipmentBatches'|'equipmentPersonnel'|'recoverableWounded'>>;
 export function shieldClass(unit: Pick<Combatant,'shield'>): ShieldClass { return (unit.shield?.recipe?.mechanism ?? 'shield') as ShieldClass; }
 /** 同L标准武器的投影单段原始伤害均值（无训练、无浮动）。 */
 function standardMean(power: number, dmgMult: number, attacks: number): number {
   const c = curveAt(power), old = diceAvg(c.dmgBase) + (c.dmgAp ? diceAvg(c.dmgAp) : 0), segment = old * dmgMult / attacks;
   return diceAvg(rebuildDice(segment, segment < 3.5 ? 2 : 6)) * UNIFIED_WOUNDS[powerIndex(power)]! / old;
 }
-export function standardSwordMean(power: number): number { return standardMean(power, 1, 1); }
+const swordMeans = Array.from({ length: 10 }, (_, i) => standardMean(i + 1, 1, 1));
+export function standardSwordMean(power: number): number { return swordMeans[power - 1] ?? standardMean(power, 1, 1); }
 /** V21 盾按装备自身的平台尺寸放大，倍率同 V6 身体生命倍率（人形1、大型2、载具6、巨兽6）。 */
-const PLATFORM_SCALE: Record<BodyKind, number> = { human: 1, large: 2, vehicle: 6, giant: 6 };
+const PLATFORM_SCALE: Record<ReturnType<typeof baseBody>, number> = { human: 1, large: 2, vehicle: 6, giant: 6 };
 export function shieldPlatformScale(unit: Pick<Combatant,'shield'> & Partial<Pick<Combatant,'body'>>): number {
-  return PLATFORM_SCALE[unit.shield?.recipe?.size ?? unit.body ?? 'human'] ?? 1;
+  return PLATFORM_SCALE[baseBody(unit.shield?.recipe?.size ?? unit.body)] ?? 1;
 }
 /** R20 中盾耐久 = n × 同级标准剑单段均值，小盾、大盾按 1 : 2 : 3；W22 旋钮 n。V21 再乘平台倍率。 */
 export const SHIELD_DURABILITY_FACTOR = 4;
+function shieldBearers(unit: ShieldBearer): number {
+  if (!unit.scale || unit.scale==='hero') return 1;
+  // Count copies from the live headcount and kit, without copying the combatant
+  // for every penetration, coverage and wear calculation in a preview.
+  const bearer = unit as ShieldBearer & Pick<Combatant, 'scale' | 'hp'>;
+  return Math.min(bearer.hp, availableCopies(bearer, unit.shield?.id));
+}
 export function shieldDurabilityMax(unit: ShieldBearer): number {
-  if (!unit.shield || shieldClass(unit) === 'energy-shield') return 0;
-  const n = { buckler: .5, shield: 1, 'tower-shield': 1.5, 'energy-shield': 0 }[shieldClass(unit)];
-  return SHIELD_DURABILITY_FACTOR * n * standardSwordMean(unit.shield.recipe?.power ?? 3) * (unit.scale && unit.scale !== 'hero' ? unit.hp! : 1) * (isArmsV3(unit.armsModel) ? shieldPlatformScale(unit) : 1);
+  if (!unit.shield) return 0;
+  const kind = shieldClass(unit);
+  if (kind === 'energy-shield') return 0;
+  const n = { buckler: .5, shield: 1, 'tower-shield': 1.5 }[kind];
+  return SHIELD_DURABILITY_FACTOR * n * standardSwordMean(unit.shield.recipe?.power ?? 3) * shieldBearers(unit) * (isArmsV3(unit.armsModel) ? shieldPlatformScale(unit) : 1);
 }
 export function clampShieldDurability(unit: ShieldBearer): void {
   if (unit.shieldDurability) unit.shieldDurability.remaining = Math.min(unit.shieldDurability.remaining, shieldDurabilityMax(unit));
@@ -35,7 +47,7 @@ export const ENERGY_SHIELD_SHARE = .25;
 export const ENERGY_HEAVY_ABSORB = .25;
 /** V21 每份每次激活回充同级单体创伤预算的三成，不随平台放大：舰载小口径也能慢慢打穿舰盾。 */
 export const ENERGY_RECHARGE_SHARE = .3;
-export type EnergyBearer = Pick<Combatant,'shield'|'scale'|'hp'> & Partial<Pick<Combatant,'armsModel'|'energyShield'|'body'>>;
+export type EnergyBearer = Pick<Combatant,'shield'|'scale'|'hp'> & Partial<Pick<Combatant,'armsModel'|'energyShield'|'body'|'equipmentBatches'|'equipmentPersonnel'|'recoverableWounded'>>;
 export function energyShieldActive(unit: EnergyBearer): boolean { return isArmsV2(unit.armsModel) && !!unit.shield && shieldClass(unit) === 'energy-shield'; }
 export function energyShieldShare(power: number): number { return Math.round(ENERGY_SHIELD_SHARE * 2 * Number(standardMean(power, 1.2, 2).toFixed(1))); }
 /** V21 每份容量 = 同级单体创伤预算（与同级屏障、治疗相同）× 平台倍率。 */
@@ -44,7 +56,7 @@ export function energyShieldRecharge(power: number): number { return Math.round(
 /** R15 过载阈值 T = 0.8 × 同L标准剑单段均值。V21 再乘平台倍率。 */
 export function energyOverloadThreshold(power: number): number { return .8 * standardSwordMean(power); }
 export const energyPower = (unit: Pick<Combatant,'shield'>) => unit.shield!.recipe?.power ?? 3;
-const energyShares = (unit: EnergyBearer) => unit.scale === 'hero' ? 1 : unit.hp;
+const energyShares = (unit: EnergyBearer) => shieldBearers(unit);
 /** 一份的容量：V21 按同级预算与平台，旧规则按 R15。 */
 export function energyShareOf(unit: EnergyBearer): number {
   return isArmsV3(unit.armsModel) ? energyShieldPool(energyPower(unit), shieldPlatformScale(unit)) : energyShieldShare(energyPower(unit));

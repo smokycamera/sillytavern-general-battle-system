@@ -9,13 +9,15 @@ const primitive = (value: unknown, keys: string[]): Record<string, any> => Objec
 const strings = (value: unknown, count: number, length: number): string[] => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').slice(0, count).map(v => v.slice(0, length)) : [];
 const positions = (value: unknown): number[] => Array.isArray(value) ? value.filter((v): v is number => Number.isSafeInteger(v) && v >= 0) : [];
 
+const unitIds = (value: unknown): string[] => Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+
 function savedIntents(value: unknown): CommanderState['memory']['intents'] {
   const v = object(value), basis = object(v.basis);
   if (!Number.isSafeInteger(v.round) || (v.round as number) < 0 || typeof v.replanned !== 'boolean') return;
   const units: Record<string, UnitIntent> = {};
-  for (const [id, value] of Object.entries(object(v.units)).slice(0, 64)) {
+  for (const [id, value] of Object.entries(object(v.units))) {
     const i = object(value);
-    if (id.length > 64 || typeof i.mode !== 'string' || !['attack', 'advance', 'hold', 'withdraw', 'support', 'open_gate', 'close_gate', 'use_ability'].includes(i.mode)
+    if (!id || typeof i.mode !== 'string' || !['attack', 'advance', 'hold', 'withdraw', 'support', 'open_gate', 'close_gate', 'use_ability'].includes(i.mode)
       || i.cell !== undefined && !Number.isSafeInteger(i.cell)
       || ['targetId', 'supportId', 'abilityId'].some(k => i[k] !== undefined && (typeof i[k] !== 'string' || (i[k] as string).length > 128))) continue;
     units[id] = { mode: i.mode as UnitIntent['mode'], ...(i.cell !== undefined ? { cell: i.cell as number } : {}),
@@ -23,7 +25,7 @@ function savedIntents(value: unknown): CommanderState['memory']['intents'] {
   }
   return { round: v.round as number, ...(v.carryRound === Number(v.round) + 1 ? { carryRound: v.carryRound as number } : {}),
     ...(Number.isSafeInteger(v.logIndex) && (v.logIndex as number) >= 0 ? { logIndex: v.logIndex as number } : {}),
-    replanned: v.replanned, basis: { visible: strings(basis.visible, 128, 64), friends: strings(basis.friends, 128, 64) }, units };
+    replanned: v.replanned, basis: { visible: unitIds(basis.visible), friends: unitIds(basis.friends) }, units };
 }
 
 /** Persist state, never tool transcripts, provider responses, reasoning, or incidental object fields. */

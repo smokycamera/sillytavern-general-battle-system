@@ -1,3 +1,6 @@
+import { readMigrationBackup } from './migration-backup.js';
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
+import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { migrateOutOfBattleLoads } from './load-migration.js';
 import { prepareClassMigration } from './arms-v2.js';
 import { instanceQuality } from '../../engine/src/instance-variance.js';
@@ -13,7 +16,7 @@ import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stam
 import type { SaveReceipt, TavernAdapter } from './tavern.js';
 import { prepareBattleItemWrite } from './battle-items.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from './trait-state.js';
-import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, ITEM_FORM_NAMES, itemSpecText, traitLevelToken, activeTraitIds, gradedTraitEnabled, traitLevel, traitLadderSummary, traitLevelSources, traitPrerequisiteReason, type Combatant } from '../../engine/src/index.js';
+import { moraleLabel, woundedLabel, isAirborne, positionedUnit, observedUnits, concealmentLabel, worksLabel, formationNode, type ObservationContext, traitSourceActive, traitRegistry, standardConditionMap, STANDARD_CONDITIONS, postureLabel, ITEM_FORM_NAMES, itemSpecText, traitLevelToken, activeTraitIds, gradedTraitEnabled, traitLevel, traitLadderSummary, traitLevelSources, traitPrerequisiteReason, RULES_BY_ID, type Combatant } from '../../engine/src/index.js';
 import { reviewMigration, type MigrationReview } from './migration-review.js';
 import { assertInventoryPanelWrite, calibrateSavedWeaponRanges, deleteUnitArchive, prepareInventoryState, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventorySave } from './inventory-state.js';
 import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
@@ -25,12 +28,12 @@ import {
   type GenerationBinding, type NarrativeSave, type NarrativeProposal,
 } from './narrative-state.js';
 
-import { RUNTIME_REMINDER } from './narrative-prompt.js';
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import { mapNarrativeReferences, mentionsNarrativeId, narrativeIds } from './narrative-ids.js';
 import { storyFields, storyEquipmentSpec, storySkillSpec, storyItemSpec, storyEffectSpec } from './story-spec.js';
 import { enhancementLabel } from '../../engine/src/enhancements.js';
 import { isGradedTrait } from '../../engine/src/data/traits.js';
+import { platformText } from '../../engine/src/platforms.js';
 const promptJson = (value: unknown, publicId: (id: string) => string = id => id) => JSON.stringify(mapNarrativeReferences(value, publicId)).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 // Only an explicit request to change a record exposes its editable fields; story wording such as 调整阵型 does not.
 const EDIT_REQUEST = /unit_set|(?:修改|调整|更改|改动)[^\s，。！？、；：,.!?;:]{0,6}(?:属性|数值|档案|面板|数据)|(?:属性|数值|档案|面板|数据)[^\s，。！？、；：,.!?;:]{0,4}(?:修改|调整|更改)/;
@@ -51,13 +54,17 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const lines = blocks.facts;
   const battleId = save.battle ? `${save.battle.kind}:${String(save.battle.snap.seed)}` : undefined;
   const battleOpen = !!battleId && !(save.committedOutcomeIds ?? []).includes(battleId);
+  const individualCasualties = battleOpen && RULES_BY_ID[String(save.battle?.snap.rulesId)]?.casualtyModel === 'individual-v1';
   const combatants = battleOpen && Array.isArray(save.battle?.snap.combatants) ? save.battle!.snap.combatants as Combatant[] : [];
   const field = save.battle?.snap.battlefield as BattlefieldSpec | undefined;
   const limited = battleOpen && combatants.some((u) => u.rulesVersion === 'v2');
-  const observation: ObservationContext = { units: combatants, mode: save.battle?.kind ?? 'small', fieldTags: save.battle?.snap.fieldTags as string[] ?? field?.environment ?? [],
+  const transports = new Set(combatants.filter(u => u.platform?.kind === 'transport').map(u => u.id));
+  const exposed = save.battle?.kind === 'small' && transports.size ? combatants.filter(u => !u.ride || !transports.has(u.ride.platformId)) : combatants;
+  const observation: ObservationContext = { units: exposed, mode: save.battle?.kind ?? 'small', fieldTags: save.battle?.snap.fieldTags as string[] ?? field?.environment ?? [],
     battlefield: field, attached: new Map(save.battle?.snap.attached as [string, string][] ?? []) };
-  const visible = new Set((limited ? observedUnits(observation, 'ally') : combatants).map((u) => u.id));
-  const canInclude = (record: { id: string; side: string }) => !limited || record.side === 'ally' || visible.has(record.id);
+  const visible = new Set((limited ? observedUnits(observation, 'ally') : exposed).map((u) => u.id));
+  const visibleObservation = { ...observation, units: combatants.filter((u) => visible.has(u.id)) };
+  const canInclude = (record: { id: string; side: string }) => record.side === 'ally' || visible.has(record.id) || (!limited && !transports.size);
   const roster = new Set(save.rosterIds ?? []);
   let inventory: InventorySave['inventory'] = [];
   try { inventory = prepareInventoryState({ storage: save.storage, inventory: save.inventory, narrativeIdState: save.narrativeIdState,
@@ -85,22 +92,25 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const unit = live ?? record.snapshot;
     const progress = xpProgress({ level: record.level, xp: record.xp ?? 0, xpCurve: unit?.xpCurve, xpLevelStart: unit?.xpLevelStart });
     const moraleLocked = record.scale === 'hero' || record.id === save.protagonistId || unit?.moraleLocked === true;
+    const liveMorale = !moraleLocked && live?.rulesVersion === 'v2' ? moraleLabel(visibleObservation, live) : '';
+    const currentMorale = battleOpen ? (detailed ? undefined : live?.morale) : record.morale;
+    const morale = moraleLocked ? '该单位士气锁定，请勿在tb修改' : liveMorale || currentMorale;
+    const moraleMax = !detailed && !moraleLocked && morale !== undefined ? (live?.base ?? record.base).moraleMax : undefined;
     const physical = live && positionedUnit(observation, live);
     const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s) && (detailed || s.conditions === undefined)).map((s) => ({ source: s.id, name: s.name,
       ...(s.traitIds.length ? { traits: s.traitIds.map((id) => (traitRegistry().get(id)?.name ?? id) + (s.traitLevels?.[id] ? 'L' + s.traitLevels[id] : '')) } : {}),
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
-    const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), undefined, unit.flightModel), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
+    const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), id === 'medic' ? unit.traitLevelModel : undefined, unit.flightModel, individualCasualties && !isVehicleBody(unit.body)), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
     const line = promptJson({ ...(detailed && traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side,
       ...(detailed ? { training: record.level, bonuses: unit?.bonuses } : { level: String(record.level) + enhancementLabel(unit?.bonuses) }),
-      ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),morale:record.morale,speedTier:unit?.speedTier,
+      ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),speedTier:unit?.speedTier,
         conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0 && !c.effectSourceId).map(c => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
       ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: '已满级' }),
-      semantics: record.scale === 'hero' ? '生命' : unit?.body==='vehicle'?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
+      semantics: record.scale === 'hero' ? '生命' : isVehicleBody(unit?.body)?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
-      ...(live && live.rulesVersion === 'v2' && moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) ? { morale: moraleLabel({ ...observation, units: combatants.filter((u) => visible.has(u.id)) }, live) } : {}),
-      ...(moraleLocked ? { morale: '该单位士气锁定，请勿在tb修改', moraleLocked: true } : {}),
+      morale, moraleMax, ...(moraleLocked ? { moraleLocked: true } : {}),
       ...(woundedLabel(live ?? record) ? { recovery: woundedLabel(live ?? record) } : {}),
       state: record.retired ? '已解散，不可选择' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
       ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),
@@ -115,8 +125,10 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
         : { id:a.id, definitionId:a.definitionId, name: a.name, mechanism: skillMechanismName(a.definitionId ?? '') || a.definitionId, power: a.fixedPower ? undefined : a.power, bonuses:a.bonuses, prepared: unit.preparedAbilityIds?.includes(a.id) }) : undefined,
       ...(detailed && !battleOpen && EDIT_REQUEST.test(requestText) ? { editable: { formation:unit?.formation&&{...unit.formation,health:undefined},abilities:unit?.abilities,traitSources:unit?.traitSources,abilityState:unit?.abilityState,fatigue:unit?.fatigue,weapon:unit?.weapon,sidearm:unit?.sidearm,armor:unit?.armor,shield:unit?.shield,xpValue:unit?.xpValue } } : {}),
-      body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, mount: unit?.mount || undefined,
-      weapon: equipmentFact(unit?.weapon), sidearm: equipmentFact(unit?.sidearm), armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
+      body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, platform: unit?.platform && platformText(unit.platform), seats: unit?.platform ? unit.seats ?? 1 : undefined,
+      mount: unit?.ride?.mode === 'mount' ? publicId(unit.ride.platformId) : unit?.mount || undefined,
+      aboard: unit?.ride?.mode === 'aboard' ? publicId(unit.ride.platformId) : undefined,
+      weapon: unit && batchWeapons(unit).map(w=>equipmentFact(w)).join('、') || undefined, armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     if (!detailed && unit?.rulesVersion === 'v2') {
       for (const source of unit.traitSources ?? []) if (source.conditions !== undefined && traitSourceActive(unit, source)) {
@@ -144,7 +156,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     const m = item.mechanics;
     if (!detailed) {
       const quantity = item.qty > 1 ? '×' + item.qty : '';
-      const key = m?.kind === 'weapon' ? item.equippedTo?.slot === 'sidearm' ? 'weapon2' : 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shield' : 'items';
+      const key = m?.kind === 'weapon' ? 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shield' : 'items';
       const quality = m && m.kind !== 'item' ? instanceQuality(m.value.recipe?.variance) : undefined;
       const enchant = m && m.kind !== 'item' ? m.value.recipe?.enchantment : undefined;
       const note = [item.note, quality && quality !== '普通' ? quality : undefined, enchant ? enchant === 'thermal' ? '热能转化' : '奥术转化' : undefined].filter(Boolean).join('；') || undefined;
@@ -272,7 +284,9 @@ export class NarrativeController {
     const battle = this.state.battle;
     if (battle && !(this.state.committedOutcomeIds ?? []).includes(`${battle.kind}:${String(battle.snap.seed)}`)) throw new Error('先结束并归档当前战斗，再恢复旧备份');
     if (this.identity !== this.adapter.identity() || this.namespace !== this.adapter.namespace()) throw new Error('聊天已切换，不能恢复旧回调');
-    const original = structuredClone(backups.at(-1).source) as NarrativeSave;
+    const backup = readMigrationBackup(backups.at(-1));
+    if (!backup) throw new Error('没有可恢复的迁移备份');
+    const original = structuredClone(backup);
     const receipt = this.adapter.save('panel', original, 'chat'); this.lastReceipt = receipt;
     if (receipt.status !== 'failed') {
       this.migration = reviewMigration(original); this.state = structuredClone(this.migration?.candidate ?? original);
@@ -317,6 +331,7 @@ export class NarrativeController {
     next = { ...next, promptSettings: this.state.promptSettings, proposals: this.state.proposals ?? [], storySync: this.state.storySync ?? false,
       committedNarrativeSources: this.state.committedNarrativeSources, deletedNarrativeReceipts: this.state.deletedNarrativeReceipts,
       inventoryOperations: this.state.inventoryOperations, classMigration: this.state.classMigration,
+      unitMigrationWarnings: this.state.unitMigrationWarnings, unitMigrationBackup: this.state.unitMigrationBackup,
       ...(this.state.inventoryMigrationBackup ? { inventoryMigrationBackup: this.state.inventoryMigrationBackup } : {}),
       ...(this.state.migrationBackups ? { migrationBackups: this.state.migrationBackups } : {}),
       factRevision: (this.state.factRevision ?? 0) + (changed ? 1 : 0) };

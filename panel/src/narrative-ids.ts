@@ -11,7 +11,7 @@ interface IdentityUnit {
 }
 export interface NarrativeIdentitySave {
   storage?: IdentityUnit[];
-  inventory?: { id: string; mechanics?: { kind: string; value?: unknown }; lootType?: string }[];
+  inventory?: { id: string; mechanics?: { kind: string; value?: unknown }; lootType?: string; mergedInto?: string }[];
   battle?: { snap: Record<string, unknown> } | null;
   narrativeIdState?: NarrativeIdState;
 }
@@ -81,8 +81,20 @@ export function narrativeIds(save: NarrativeIdentitySave) {
     do { handle = prefix + legacyHash(attempt ? id + ':' + attempt : id); attempt++; } while (legacyReserved.has(handle) || legacyIds.has(handle));
     legacyIds.set(handle, id);
   }
+  const merged = new Map((save.inventory ?? []).flatMap(item => item.mergedInto ? [[item.id, item.mergedInto] as const] : []));
+  const resolveHolding = (id: string): string => {
+    if (!merged.has(id)) return id;
+    const seen = new Set<string>();
+    let destination: string | undefined;
+    while ((destination = merged.get(id))) {
+      if (seen.has(id)) throw Error('合并后的库存编号形成循环');
+      seen.add(id);
+      id = destination;
+    }
+    return id;
+  };
   return { state, publicId: (id: string) => publicIds.get(id) ?? id,
-    realId: (id: string) => realIds.get(id) ?? (reserved.has(id) ? id : realIds.get(normalizeHandle(id)) ?? legacyIds.get(id)) ?? id,
+    realId: (id: string) => resolveHolding(realIds.get(id) ?? (reserved.has(id) ? id : realIds.get(normalizeHandle(id)) ?? legacyIds.get(id)) ?? id),
     /** A handle already names a saved or deleted identity, or a raw id that looks like a handle. */
     taken: (handle: string) => realIds.has(handle) || reserved.has(handle) || legacyIds.has(handle) };
 }

@@ -1,3 +1,4 @@
+import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { normalizeBattlefieldPlan, type BattlefieldPlan, type DeploymentPlan } from '../../engine/src/small/battlefield-plan.js';
 import { MAX_SMALL_UNITS } from '../../engine/src/battle-limits.js';
 import { BattlefieldPlanError } from '../../engine/src/small/battlefield-error.js';
@@ -5,7 +6,7 @@ import { safeLandmarkLabel } from '../../engine/src/small/map-label.js';
 import { SCENE_ARCHETYPE_NAMES, type SceneArchetype, type SceneConstraint, type SceneEntity, type SceneRelation, type WorldAnchor } from '../../engine/src/small/scene-intent.js';
 import { recommendedCitySize } from '../../engine/src/small/layered-generator.js';
 import type { BattlefieldScene } from '../../engine/src/small/map-design.js';
-import { waterOnly, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
+import { activeTraitIds, waterOnly, hasFlightAbility, isRangedWeapon, type Combatant } from '../../engine/src/index.js';
 import type { BattleObjectiveMode } from './battle-setup.js';
 import { INTERIOR_USES, INTERIOR_PATTERNS, INTERIOR_USE_NAMES, INTERIOR_PATTERN_NAMES } from '../../engine/src/small/interior-plan.js';
 import { COMPOUND_PATTERNS, TRENCH_PATTERNS, COMPOUND_PATTERN_NAMES, TRENCH_PATTERN_NAMES } from '../../engine/src/small/position-plan.js';
@@ -72,6 +73,7 @@ const MAX_PLACES = 8;
 export interface LayoutUnit { id: string; name: string; side: Combatant['side']; kind: string; note?: string }
 export interface LayoutContext {
   scene: BattlefieldScene;
+  environment?: string;
   size?: LayoutSize;
   /** The side attacking the walls; only meaningful in a siege. */
   attacker: 'ally' | 'enemy';
@@ -80,11 +82,12 @@ export interface LayoutContext {
   vipName?: string;
   map: [number, number];
 }
-export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}): LayoutUnit[] {
-  return roster.filter(u => u.hp > 0 && u.status === 'ready').slice(0, MAX_SMALL_UNITS).map(u => ({
+export function layoutUnits(roster: readonly Combatant[], publicId: (id: string) => string, notes: Record<string, string> = {}, environment?: string): LayoutUnit[] {
+  const flightContext = { fieldTags: environment ? [environment] : [] };
+  return roster.filter(u => u.hp > 0 && u.status === 'ready').map(u => ({
     id: publicId(u.id), name: u.name.slice(0, 40), side: u.side,
-    kind: [u.scale === 'hero' ? '人物' : '部队', u.body === 'vehicle' ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
-      hasFlightAbility(u) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
+    kind: [u.scale === 'hero' ? '人物' : '部队', isVehicleBody(u.body) ? '载具' : u.body && u.body !== 'human' ? '大型' : u.mount ? '骑乘' : '',
+      activeTraitIds(u).includes('space-adapted') ? '太空机动' : '', hasFlightAbility(u, flightContext) ? '可飞行' : '', waterOnly(u) ? '航行：只能在深水或浅水部署与移动' : '', isRangedWeapon(u.weapon) ? '远程' : '近战'].filter(Boolean).join('·'),
     ...(notes[u.id]?.trim() ? { note: notes[u.id]!.trim().slice(0, 60) } : {}) }));
 }
 /** The generator's starting size for the scene; capacity may still enlarge the map. */
@@ -106,6 +109,8 @@ function exitSide(ctx: LayoutContext): 'ally' | 'enemy' | undefined { return ctx
 
 function sceneLine(ctx: LayoutContext): string {
   const a = sideName(ctx.attacker), d = sideName(defenderOf(ctx));
+  if (ctx.scene === 'field' && ctx.environment === 'cosmos') return '太空';
+  if (ctx.scene === 'field' && ctx.environment === 'sea') return '海洋';
   return ctx.scene === 'city_siege' ? `城墙攻防，攻方=${a}（在城外），守方=${d}（守城）`
     : ctx.scene === 'building_siege' ? `围攻院落或据点，攻方=${a}（在外），守方=${d}（在院内）`
     : ctx.scene === 'city_streets' ? '城内巷战，各方都在街巷里'
@@ -151,6 +156,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
   const kinds = placeKinds(ctx.scene).map(k => `${k}${PLACE_NAMES[k]}`).join('|');
   const lines = [
     '【第2步：布置战场】根据正文，在4×4分区上布置本场战斗。程序会据此生成地形、建筑与道路，并把单位放进对应区域。',
+    ctx.scene === 'field' && (ctx.environment === 'sea' || ctx.environment === 'cosmos') ? '海洋以深水为底，按正文用 land 指定岛岸所在分区；太空以真空为底，用 land 指定可部署的平台或舱区，用 asteroids 指定遮挡视线的小行星所在分区。两项均填写4×4分区编号数组。为缺少环境能力的参战单位预留安全部署位置。' : '',
     `本场：${sceneLine(ctx)}。任务：${objectiveLine(ctx)}。地图从${ctx.map[0]}列×${ctx.map[1]}行起步，程序按区域、建筑和单位容量扩展，按下列分区编号定位。`,
     '参战单位（短ID · 名称 · 阵营 · 类型 · 备注）：',
     ...ctx.units.map(u => [u.id, u.name, sideName(u.side), u.kind, u.note].filter(Boolean).join(' · ')),
@@ -175,7 +181,7 @@ export function layoutTask(ctx: LayoutContext, retry?: LayoutRetry): string {
     `- places：最多${MAX_PLACES}个有战术意义的地点，优先写正文提到的，[{"type":类型,"name":"名称","at":方位,"height":0-3,"state":"destroyed"}]。type=${kinds}。height只给高地等写，2-3为明显高地；state=destroyed表示已毁。普通房屋、树木、杂物由程序补全，不要写。室外的重要building生成有墙、门和可走内部的建筑，单位可按place进入或驻守，任务目标可放在内部。`,
     (siege ? `- ${sides}开局位置。${sideName(ctx.attacker)}是攻方，写{"at":["B4"]}这样的1-3个${ctx.scene === 'city_siege' ? '城' : '院'}外方位。${sideName(d)}是守方，默认在${ctx.scene === 'city_siege' ? '城' : '院'}内，只需写post：wall城头为主|inside${ctx.scene === 'city_siege' ? '城内街巷' : '院内'}，不上墙|outside出${ctx.scene === 'city_siege' ? '城' : '院'}列阵（这时再写at为外面的方位）。`
       : `- ${sides}开局位置，{"at":["B4"]}，可写1-3个方位。${ctx.scene === 'city_streets' ? '各方默认在街区内。' : ''}`) + (thirdParty ? 'neutral默认从右侧进入。' : ''),
-    `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"D1"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。最多布置${MAX_SMALL_UNITS}个单位。`,
+    `- units：根据正文内容选择单位开局位置。unit可写一个短ID或多个短ID组成的数组，有正文依据时优先使用place。按方位写 {"unit":"u3","at":"D1"}；有具体地点写 {"unit":["u1","u2"],"place":"档案室","relation":"inside"}，place位置使用本次places、桥或城门的名称，relation=inside在内部|guards驻守附近|near靠近；at可作为地点无效时的备用方位；按方位部署的攻城守方可写post=wall|inside|outside。`,
     exitSide(ctx) ? '- objective：撤离点，写4×4分区编号（放在该方向的地图边缘）或places里的name；省略时按部署方向决定。'
       : ctx.objectiveMode === 'siege' ? `- objective：${sideName(ctx.attacker)}要夺取的地点，写places里的name；省略时为${ctx.scene === 'city_siege' ? '城中心' : '守方后方核心'}。`
       : ctx.objectiveMode === 'control' ? (thirdParty ? '- objective：各方争夺的地点，写places里的name或4×4分区编号；省略时由程序选择各方可接近的中立位置。' : '- objective：双方争夺的地点，写places里的name或4×4分区编号；省略时由程序选择双方可接近的中立位置。') : '',
@@ -274,6 +280,13 @@ export function compileLayout(answer: unknown, ctx: LayoutContext): CompiledLayo
     if (!anchors.length || anchors.length > 16 || anchors.some(a => !a || !gridPosition(a))) throw new BattlefieldPlanError('区域须写1—16个4×4分区编号');
     return [...new Set(anchors)] as GridAnchor[];
   };
+  if (ctx.environment === 'sea' || ctx.environment === 'cosmos') {
+    for (const key of ['land','asteroids'] as const) if (raw[key] !== undefined && (key === 'land' || ctx.environment === 'cosmos')) {
+      const value = raw[key];
+      if (!Array.isArray(value) || value.some(v => typeof v !== 'string' || !gridPosition(v.toUpperCase()))) throw new BattlefieldPlanError(key+'须为4×4分区编号数组');
+      plan[key] = [...new Set(value.map(v => v.toUpperCase() as GridAnchor))];
+    }
+  }
   const citySectors = cityRaw ? numberedSectors(cityRaw.at) : undefined;
   if (citySectors && (allowsCity(scene) || scene === 'city_streets' || scene === 'building_siege')) plan.citySectors = citySectors;
   let cityAt = citySectors?.[0] ?? (cityRaw ? sectorOf(cityRaw.at) : undefined);

@@ -46,7 +46,7 @@
 
 /* Keep navigation usable and signal durable writes without freezing the page. */
 body[aria-busy="true"] { cursor: progress; }
-body[aria-busy="true"] .app-state::before { content: '处理中…'; font-size: 12px; color: var(--accent, #cdbb86); }
+body[aria-busy="true"] .app-save::before { content: '处理中…'; font-size: 12px; color: var(--accent, #cdbb86); }
 button, [data-action] { touch-action: manipulation; }
 
 button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opacity: .72; }
@@ -78,3 +78,26 @@ button[data-processing="true"] { outline: 2px solid var(--accent, #cdbb86); opac
 .battle-finish-actions{display:flex;flex-basis:100%;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 .llm-notes-dialog{width:min(700px,96vw);}.llm-notes-side{border-top:1px solid var(--line);margin-top:12px;padding-top:8px;}.llm-notes-side p,.llm-notes-side li{white-space:pre-wrap;overflow-wrap:anywhere;}
 .grid-search-mark{position:absolute;right:3px;bottom:3px;width:4px;height:4px;border-radius:50%;background:var(--ally);pointer-events:none;z-index:2;}
+
+.transport-panel { flex:1 1 100%; min-width:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel); }
+.transport-panel header, .transport-row { display:flex; align-items:center; gap:.65rem; padding:.55rem .75rem; }
+.transport-panel header { flex-wrap:wrap; justify-content:space-between; color:var(--gold); background:var(--card); }
+.transport-panel header span, .transport-name small, .transport-count { color:var(--dim); font-size:.82rem; }
+.transport-row { flex-wrap:wrap; border-top:1px solid var(--line); }
+.transport-name { flex:1 1 8rem; min-width:0; overflow-wrap:anywhere; }
+.transport-name b, .transport-name small { display:block; }
+.transport-count { display:inline-flex; align-items:center; gap:.35rem; }
+.transport-count input { box-sizing:border-box; width:5.2em; min-height:36px; font-variant-numeric:tabular-nums; }
+.transport-row button { min-height:36px; padding-inline:.85rem; }
+.transport-row :focus-visible { outline:2px solid var(--gold); outline-offset:1px; }
+
+.ride-editor { min-width:0; margin:8px 0; padding:6px 10px 9px; border:1px solid var(--line); border-radius:6px; }
+.ride-editor legend { padding:0 4px; color:var(--gold); }
+.ride-entry { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
+.ride-entry label, .ride-entry span { flex:1 1 9rem; min-width:0; overflow-wrap:anywhere; }
+.ride-entry select { display:block; width:100%; min-width:0; max-width:100%; }
+
+.team-transport-group { display:grid; gap:5px; align-content:start; min-width:0; padding:6px; border:1px solid var(--line); border-left:3px solid var(--gold); border-radius:7px; }
+
+html[lang="en"] body[aria-busy="true"] .app-save::before { content: "Working…"; }
+body[aria-busy="true"] .app-save:has(> :only-child:empty) { display:flex; }

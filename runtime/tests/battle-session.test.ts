@@ -20,7 +20,9 @@ it('keeps multiple turns and item consumption in memory, then commits the cumula
   const saved = f.store.envelope(), write = vi.spyOn(f.journal, 'put'), read = vi.spyOn(f.host, 'readPersisted');
   const accept = async (memoryOnly: boolean) => {
     const before = f.service.snapshot();
-    return f.service.persistPanel({ ...before, battle: { kind: 'small', snap: b.toSnapshot() } }, before.factRevision ?? 0, { memoryOnly });
+    const battle = { kind: 'small' as const, snap: b.toSnapshot() };
+    if (memoryOnly) return (await f.service.persistBattleTurn({ battle }, before.factRevision ?? 0)).receipt;
+    return f.service.persistPanel({ ...before, battle }, before.factRevision ?? 0);
   };
   for (let i = 0; i < 2; i++) {
     const actor = b.byId('a'), ability = actor.abilities.find(a => a.itemSourceId === 'dose')!;
@@ -39,6 +41,32 @@ it('keeps multiple turns and item consumption in memory, then commits the cumula
   expect((await f.service.persistPanel(beforeRepeat, beforeRepeat.factRevision ?? 0)).status).toBe('confirmed');
   expect(write).toHaveBeenCalledTimes(1); expect(f.store.snapshot().inventory![0]!.qty).toBe(1);
   await f.service.load(); expect(f.service.snapshot()).toEqual(f.store.snapshot()); f.service.dispose();
+});
+
+it('rejects an in-memory turn while a durable checkpoint is being prepared', async () => {
+  const f = nativeFixture(); await f.service.start();
+  const battle = { kind: 'small' as const, snap: { seed: 'write-race', round: 1 } };
+  await f.service.transact(() => ({ schemaVersion: 2, battle }));
+  const before = f.service.snapshot();
+  const put = f.journal.put.bind(f.journal);
+  let entered!: () => void, release!: () => void;
+  const journalStarted = new Promise<void>(resolve => { entered = resolve; });
+  const journalBlocked = new Promise<void>(resolve => { release = resolve; });
+  vi.spyOn(f.journal, 'put').mockImplementation(async (scope, operation) => {
+    entered(); await journalBlocked; await put(scope, operation);
+  });
+  const durable = f.service.persistPanel({ ...before, field: 'forest' }, before.factRevision ?? 0);
+  await journalStarted;
+  const moved = { ...battle, snap: { ...battle.snap, round: 2 } };
+  try {
+    expect((await f.service.persistBattleTurn({ battle: moved }, before.factRevision ?? 0)).receipt.status).toBe('conflict');
+    expect(f.service.snapshot().battle).toEqual(battle);
+  } finally { release(); }
+  expect((await durable).status).toBe('confirmed');
+  const revision = f.service.snapshot().factRevision ?? 0;
+  expect((await f.service.persistBattleTurn({ battle: moved }, revision)).receipt.memoryOnly).toBe(true);
+  expect(f.service.snapshot()).toMatchObject({ battle: moved, field: 'forest' });
+  f.service.dispose();
 });
 
 it('reloading or switching chats drops session progress and reads the opening checkpoint', async () => {

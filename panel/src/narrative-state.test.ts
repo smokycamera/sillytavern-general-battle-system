@@ -104,7 +104,7 @@ describe('正文原子事务', () => {
     armed.id = 'a'; fixture.save.storage = [unitRecordFromCombatant(armed)];
     const prepared = prepareInventoryState(fixture.save);
     const oldId = prepared.inventory!.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary')!.id;
-    const source = { ...fixture.source, text: `<tb><unit_set id="a" weapon="新步枪:步枪L5"/><take id="${oldId}" qty="1"/></tb>` };
+    const source = { ...fixture.source, text: `<tb><unit_set id="a" weapon="新步枪:步枪L5"/><add item="新步枪" spec="步枪L5" qty="1"/><take id="${oldId}" qty="1"/></tb>` };
     const binding = captureGeneration(prepared, fixture.ns, 'g1'); binding.complete = true;
     const proposal = proposalFromMessage(source, binding)!;
     const next = prepareNarrativeTransaction(prepared, proposal, fixture.ns, true);
@@ -209,6 +209,8 @@ describe('正文原子事务', () => {
 
   it('正文盾牌名称、规格和修正生成真实实物，存档重开和升级保留同一配方', () => {
     const { save, proposal, ns } = setup('<spawn name="持盾卫队" side="ally" scale="company" hpMax="30" level="1" shield="AEGIS塔盾:盾L5+2防御-3热能防护"/>');
+    // This seed rolls a protection offset just below zero before integer rounding.
+    proposal.id = '3ba97b80-b081-4db0-996c-f884bbbddae5';
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const record = next.storage!.find(r => r.name === '持盾卫队')!;
     const unit = materializeUnitRecord(JSON.parse(JSON.stringify(record)), reg);
@@ -282,11 +284,11 @@ describe('正文原子事务', () => {
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     expect(save.storage![0]!.snapshot!.weapon).toEqual(unit.weapon);
   });
-  it('正文装备按件建档，失败重试不重掷，未知物品保留叙事记录', () => {
+  it('正文装备按批次保存件数，失败重试不重掷，未知物品保留叙事记录', () => {
     const { save, proposal, ns } = setup('<add item="制式剑" type="weapon" spec="剑L4" qty="2"/><add item="急救剂" type="consumable" spec="治疗L3" qty="3"/><add item="未知遗物"/>');
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
     const weapons = next.inventory!.filter((i) => i.mechanics?.kind === 'weapon');
-    expect(weapons).toHaveLength(2); expect(new Set(weapons.map((i) => i.id)).size).toBe(2);
+    expect(weapons).toMatchObject([{name:'制式剑', qty:2, batch:true}]);
     expect(next.inventory!.find((i) => i.name === '急救剂')).toMatchObject({ qty: 3, lootType: 'item', mechanics: { kind: 'item', value: { recipe: { form: 'single', active: 'generic:buff:heal', power: 3 } } } });
     expect(next.inventory!.find((i) => i.name === '未知遗物')!.mechanics).toBeUndefined();
     expect(prepareNarrativeTransaction(save, proposal, ns, true)).toEqual(next);

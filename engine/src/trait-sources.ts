@@ -1,3 +1,4 @@
+import { baseBody, isVehicleBody } from './vehicle-size.js';
 import { revisedLoad } from './load-model.js';
 import { shieldGuardUsable } from './arms.js';
 import { progression } from './progression.js';
@@ -121,7 +122,7 @@ export function autoLooseFormation(unit: Pick<Combatant, 'rulesVersion' | 'armor
 }
 /** 装备或编制自动产生的特质在界面上的简短说明。 */
 export function autoTraitLabel(id: string, unit?: Partial<Pick<Combatant,'numericModel'|'loadModel'|'armorWearModel'|'body'>>): string {
-  if (unit?.armorWearModel && unit.body !== 'vehicle' && ['heavy-armor','super-heavy'].includes(id)) return id === 'super-heavy'
+  if (unit?.armorWearModel && !isVehicleBody(unit.body) && ['heavy-armor','super-heavy'].includes(id)) return id === 'super-heavy'
     ? '超重装甲（移动×0.75、先攻−2、活动疲劳×1.5）' : '重甲（移动×0.85、先攻−1、活动疲劳×1.25）';
   if ((unit?.numericModel || unit && revisedLoad(unit)) && ['heavy-armor','super-heavy'].includes(id)) return (id === 'super-heavy' ? '超重装甲' : '重甲') + '（负担按容量占比）';
   return id === 'super-heavy' ? '超重装甲（先攻−2，无额外防御）' : id === 'heavy-armor' ? '重甲（先攻−1，无额外防御）' : id === 'loose-formation' ? '散兵（步枪类编队自动疏散）' : id;
@@ -130,9 +131,19 @@ export function equipmentTraitIds(unit: Pick<Combatant, 'rulesVersion' | 'armor'
   const id = unit.rulesVersion === 'v2' ? armorTraitId(armorBurdenTier(unit)) : undefined;
   return [...(id ? [id] : []), ...(unit.scale !== undefined && autoLooseFormation(unit as Combatant) ? ['loose-formation'] : [])];
 }
+// Damage samples mutate HP and shields, but never change which items or trait
+// sources are equipped on their private copies. Live units do not enter this cache.
+const sampleTraits = new WeakMap<Combatant, { ids?: string[]; levels: Map<string, number> }>();
+export function cacheDamageSampleTraits(unit: Combatant): void {
+  sampleTraits.set(unit, { levels: new Map() });
+}
 export function activeTraitIds(unit: Combatant): string[] {
+  const cache = sampleTraits.get(unit);
+  if (cache?.ids) return cache.ids;
   const ids = [...unit.traits, ...physicalTraitIds(unit), ...equipmentTraitIds(unit), ...Object.values(unit.accessories ?? {}).flatMap(item => item?.traitId ? [item.traitId] : []), ...(unit.gear ?? []).flatMap(item => item.passive?.traits.map(grant => grant.id) ?? []), ...(unit.rulesVersion === 'v2' ? unit.traitSources?.filter((s) => traitSourceActive(unit, s)).flatMap((s) => s.traitIds) ?? [] : [])];
-  return [...new Set(traitLevelsV16(unit) ? ids.map(id => canonicalTraitId(id, phase2Traits(unit))) : ids)];
+  const active = [...new Set(traitLevelsV16(unit) ? ids.map(id => canonicalTraitId(id, phase2Traits(unit))) : ids)];
+  if (cache) cache.ids = active;
+  return active;
 }
 export interface TraitLevelSource { id: string; name: string; level: number; remaining?: number }
 /** 来源先投影别名再取强；查询不改写身份、期限或本体。 */
@@ -154,7 +165,12 @@ export function traitLevelSources(unit: Combatant, id: string, horizon = 0): Tra
 export function effectiveTraitLevel(unit: Combatant, id: string, traits?: readonly string[], horizon = 0): number {
   const canonical = traitLevelsV16(unit) ? canonicalTraitId(id, phase2Traits(unit)) : id;
   if (traits && !traits.includes(canonical)) return 0;
-  return Math.max(0, ...traitLevelSources(unit, canonical, horizon).map((s) => s.level));
+  const cache = horizon === 0 ? sampleTraits.get(unit) : undefined;
+  const known = cache?.levels.get(canonical);
+  if (known !== undefined) return known;
+  const level = Math.max(0, ...traitLevelSources(unit, canonical, horizon).map((s) => s.level));
+  cache?.levels.set(canonical, level);
+  return level;
 }
 export function activeConditionIds(unit: Combatant): string[] {
   return [...new Set([...unit.conditions.filter((c) => c.dur > 0).map((c) => c.id),
@@ -162,12 +178,13 @@ export function activeConditionIds(unit: Combatant): string[] {
 }
 export function actualTargetTag(unit: Combatant, tag: string): boolean {
   if (unit.rulesVersion !== 'v2') return unit.tags.includes(tag);
-  if (tag === 'large') return unit.mount === true || ['large', 'giant', 'vehicle'].includes(unit.body ?? 'human');
+  if (tag === 'large') return unit.mount === true || ['large', 'giant', 'vehicle'].includes(baseBody(unit.body));
+  if (tag === 'vehicle') return isVehicleBody(unit.body);
   if (tag === 'mounted') return unit.mount === true;
   if (tag === 'airborne') return unit.airborne === true;
   if (tag === 'titan') return unit.body === 'giant';
   if (tag === 'infantry') return (unit.body ?? 'human') === 'human' && !unit.mount && !unit.airborne;
-  if (tag === 'mobile') return unit.mount === true || unit.body === 'vehicle' || unit.archetype === 'mobile';
+  if (tag === 'mobile') return unit.mount === true || isVehicleBody(unit.body) || unit.archetype === 'mobile';
   if (['ranged', 'caster', 'brute'].includes(tag)) return unit.archetype === tag;
   if (tag === 'mook') return false;
   if (tag === 'company') return unit.scale !== 'hero';
@@ -175,7 +192,7 @@ export function actualTargetTag(unit: Combatant, tag: string): boolean {
   return unit.tags.includes(tag);
 }
 export interface TraitContext { weapon?: Weapon; ranged?: boolean }
-export function bodyRank(unit: Pick<Combatant, 'body' | 'mount'>): number { return Math.max(unit.mount ? 2 : 1, { human: 1, large: 2, vehicle: 3, giant: 4 }[unit.body ?? 'human']); }
+export function bodyRank(unit: Pick<Combatant, 'body' | 'mount'>): number { return Math.max(unit.mount ? 2 : 1, { human: 1, large: 2, vehicle: 3, giant: 4 }[baseBody(unit.body)]); }
 /** 这里是机械前提，未实现的空间特质不能靠此函数伪称完成。 */
 export function traitPrerequisiteReason(unit: Combatant, id: string, context: TraitContext = {}): string | undefined {
   if (unit.rulesVersion !== 'v2') return undefined;

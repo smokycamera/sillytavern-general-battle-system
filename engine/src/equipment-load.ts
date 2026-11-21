@@ -1,9 +1,11 @@
+import { VEHICLE_SIZES, hasVehicleSize, isVehicleBody } from './vehicle-size.js';
+import { batchCount } from './equipment-batches.js';
 import { gradedNumbers } from './numeric-model.js';
 import { revisedLoad, REVISED_HUMAN_CAPACITY, VEHICLE_CAPACITY } from './load-model.js';
 import { isArmsV2 } from './arms-model.js';
 import { weaponCrew } from './weapon-crew.js';
 import type { Combatant, Weapon } from './types.js';
-export type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'> & Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources' | 'gear' | 'body' | 'scale' | 'armsModel' | 'loadModel'>>;
+export type EquippedLoad = Pick<Combatant, 'weapon' | 'sidearm' | 'armor' | 'shield' | 'accessories'> & Partial<Pick<Combatant, 'equipmentBatches' | 'equipmentPersonnel' | 'hp' | 'recoverableWounded' | 'unequippedWounded' | 'rulesVersion' | 'traits' | 'traitSources' | 'gear' | 'body' | 'scale' | 'armsModel' | 'loadModel'>>;
 /** 天生护甲（炼体、兽皮、鳞片、甲壳）：护甲就是身体，只看本身特质与仍有效的来源，装备授予不算。 */
 export function hasNaturalArmor(unit: Partial<Pick<Combatant, 'rulesVersion' | 'traits' | 'traitSources'>>): boolean {
   return unit.rulesVersion === 'v2' && (!!unit.traits?.includes('natural-armor') || !!unit.traitSources?.some((s) => !s.revoked && s.kind !== 'equipment'
@@ -14,32 +16,53 @@ export function weaponLoadCrew(unit: EquippedLoad, weapon?: Weapon): number {
 }
 /** Body armor is individual; V29 human formations share crew-served primary/secondary weapon loads. */
 export function equipmentLoad(unit: EquippedLoad): number {
+  if (unit.equipmentBatches?.length && unit.hp !== undefined && unit.scale) {
+    const bearer = unit as EquippedLoad & Pick<Combatant,'hp'|'scale'>;
+    const issued = new Set(unit.equipmentBatches?.map(b=>b.id));
+    const people = unit.scale === 'hero' ? 1 : unit.hp;
+    const legacy = [unit.weapon,unit.sidearm,hasNaturalArmor(unit)?undefined:unit.armor,unit.shield];
+    let total = legacy.reduce((n,item)=>n+(item && !issued.has(item.id) ? people*(item.load??0) : 0),0);
+    for (const batch of unit.equipmentBatches ?? []) {
+      const item = batch.mechanics;
+      if (item.kind === 'item' || item.kind === 'armor' && hasNaturalArmor(unit)) continue;
+      total += (item.value.load ?? 0)*batchCount(bearer,batch,true);
+    }
+    return total;
+  }
   return (unit.weapon?.load ?? 0) / weaponLoadCrew(unit, unit.weapon) + (unit.sidearm?.load ?? 0) / weaponLoadCrew(unit, unit.sidearm) + (hasNaturalArmor(unit) ? 0 : unit.armor?.load ?? 0) + (unit.shield?.load ?? 0)
     + Object.values(unit.accessories ?? {}).reduce((sum, item) => sum + (item?.load ?? 0), 0) + (unit.gear ?? []).reduce((sum, item) => sum + item.load, 0);
 }
+function loadCarriers(unit: Partial<Pick<Combatant,'scale'|'hp'|'recoverableWounded'|'equipmentBatches'>>): number {
+  return unit.equipmentBatches?.length && unit.scale !== 'hero'
+    ? Math.max(1,(unit.hp ?? 1) + (unit.recoverableWounded ?? 0)) : 1;
+}
 /** 实时从实际配装推导，卸装/改变身体后不残留状态，也不改写基础属性。 */
 export function humanEncumbered(unit: EquippedLoad & Pick<Combatant, 'body' | 'rulesVersion'>): boolean {
-  return unit.rulesVersion === 'v2' && (unit.body ?? 'human') === 'human' && equipmentLoad(unit) >= 12;
+  return unit.rulesVersion === 'v2' && (unit.body ?? 'human') === 'human' && equipmentLoad(unit) >= 12 * loadCarriers(unit);
 }
 export type BurdenUnit = EquippedLoad & Pick<Combatant,'body'|'rulesVersion'> & Partial<Pick<Combatant,'level'|'armsModel'|'numericModel'|'loadModel'>>;
 export const HUMAN_CAPACITY = [5,8,9,12,14,18,24,32,44,60] as const;
-export function equipmentCapacity(unit: Pick<Combatant,'body'|'level'> & Partial<Pick<Combatant,'numericModel'|'loadModel'>>): number {
-  if (revisedLoad(unit)) return unit.body === 'vehicle' ? VEHICLE_CAPACITY[unit.level - 1]!
-    : REVISED_HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1);
-  if (gradedNumbers(unit) && unit.body !== 'vehicle') return HUMAN_CAPACITY[unit.level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
-  return unit.body === 'vehicle' ? 24 : {human:10,large:14,giant:20,vehicle:24}[unit.body ?? 'human'] + Math.floor(.8*unit.level);
+export function equipmentCapacity(unit: Pick<Combatant,'body'> & Partial<Pick<Combatant,'level'|'numericModel'|'loadModel'|'hp'|'scale'|'equipmentBatches'|'recoverableWounded'>>): number {
+  const carriers = loadCarriers(unit), level = unit.level ?? 1;
+  if (isVehicleBody(unit.body)) {
+    const sizeFactor = hasVehicleSize(unit.body) ? VEHICLE_SIZES[unit.body].capacity : 1;
+    return carriers * sizeFactor * (revisedLoad(unit) ? VEHICLE_CAPACITY[level - 1]! : 24);
+  }
+  if (revisedLoad(unit)) return carriers * REVISED_HUMAN_CAPACITY[level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.5 : 1);
+  if (gradedNumbers(unit)) return carriers * HUMAN_CAPACITY[level - 1]! * (unit.body === 'giant' ? 2 : unit.body === 'large' ? 1.4 : 1);
+  return carriers * ({human:10,large:14,giant:20}[unit.body ?? 'human'] + Math.floor(.8*level));
 }
 export function equipmentBurden(unit: BurdenUnit): number {
   if (!isArmsV2(unit.armsModel) && !revisedLoad(unit)) return Number(humanEncumbered(unit));
-  const capacity = equipmentCapacity({...unit,level:unit.level!}), load = equipmentLoad(unit);
+  const capacity = equipmentCapacity(unit), load = equipmentLoad(unit);
   return load>capacity ? 2 : load>capacity*.8 ? 1 : 0;
 }
 export function overloadPenalty(unit: BurdenUnit): number {
   if (gradedNumbers(unit) || revisedLoad(unit)) return 10 * Math.max(0, loadRatio(unit) - 1);
-  return equipmentBurden(unit) === 2 ? Math.min(5,Math.ceil((equipmentLoad(unit)-equipmentCapacity({...unit,level:unit.level!}))/equipmentCapacity({...unit,level:unit.level!})*10)) : 0;
+  return equipmentBurden(unit) === 2 ? Math.min(5,Math.ceil((equipmentLoad(unit)-equipmentCapacity(unit))/equipmentCapacity(unit)*10)) : 0;
 }
 
-export function loadRatio(unit: BurdenUnit): number { return equipmentLoad(unit) / equipmentCapacity({...unit,level:unit.level!}); }
+export function loadRatio(unit: BurdenUnit): number { return equipmentLoad(unit) / equipmentCapacity(unit); }
 export function loadMovementScale(unit: BurdenUnit): number {
   const ratio = loadRatio(unit);
   return ratio <= .8 ? 1 : ratio <= 1 ? 1 - 1.5 * (ratio - .8) : .7 / ratio ** 2;

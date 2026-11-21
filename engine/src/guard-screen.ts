@@ -1,3 +1,4 @@
+import { baseBody } from './vehicle-size.js';
 import { shieldGuardUsable } from './arms.js';
 import { attackHostile, combatHostile } from './battle-control.js';
 import type { Combatant, ConditionDef, Weapon } from './types.js';
@@ -16,7 +17,7 @@ function rayClearsUnit(attacker:Combatant,target:Combatant,unit:Combatant,space:
   const ax=attacker.pos!%field.width,ay=Math.floor(attacker.pos!/field.width),dx=target.pos!%field.width-ax,dy=Math.floor(target.pos!/field.width)-ay;
   const t=Math.max(0,Math.min(1,((unit.pos!%field.width-ax)*dx+(Math.floor(unit.pos!/field.width)-ay)*dy)/Math.max(1,dx*dx+dy*dy)));
   const height=eyeHeight(field,attacker)+(eyeHeight(field,target)-eyeHeight(field,attacker))*t;
-  return height>unitHeight(field,unit)+({human:.5,large:.75,vehicle:.75,giant:1}[unit.body??'human']);
+  return height>unitHeight(field,unit)+({human:.5,large:.75,vehicle:.75,giant:1}[baseBody(unit.body)]);
 }
 function coordinates(unit: Combatant, space: GuardSpace) {
   if (space.mode === 'mass') return formationNode(unit);

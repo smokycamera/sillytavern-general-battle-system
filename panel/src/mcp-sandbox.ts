@@ -1,6 +1,6 @@
 import { generateUnit, SmallBattle, MassBattle, randomSeed, WEAPON_CLASSES, type Trait, type Order } from '../../engine/src/index.js';
 import { randomId } from '../../host/src/browser-compat.js';
-import { AutoBattleLoop, yieldBattleFrame } from './auto-battle.js';
+import { AutoBattleLoop, battleProgress, yieldBattleFrame } from './auto-battle.js';
 import { executeSmallGameAction, McpGameApi, type GameAction } from './mcp-game.js';
 import { buildEncounter, encounterPreview, type EncounterBuild } from './game-encounter.js';
 import { PlayerPreparation } from './player-preparation.js';
@@ -81,10 +81,10 @@ export class McpSandbox {
   }
   private async enemyTurns(): Promise<void> {
     const b = this.battle; if (!(b instanceof SmallBattle)) return;
-    let steps = 0;
     while (!b.isOver() && b.active && (b.active.side === 'enemy' || b.active.status !== 'ready' || b.active.conditions.some(c => c.dur > 0 && b.conditions.get(c.id)?.skipTurn))) {
-      if (++steps > 200) throw Error('自动回合未能交还控制，试战已暂停');
+      const before = battleProgress(b);
       if (b.active.status !== 'ready') b.endTurn(); else b.autoAction(b.active.id);
+      if (!b.isOver() && battleProgress(b) === before) throw Error('自动行动未推进回合，已暂停');
       await yieldBattleFrame();
       if (this.currentScope !== this.scope()) throw Error('聊天已切换');
     }
@@ -120,8 +120,10 @@ export class McpSandbox {
       try {
         await this.transaction(() => {
           const b = this.battle!;
+          const before = battleProgress(b);
           if (b instanceof SmallBattle) { if (b.active?.status !== 'ready') b.endTurn(); else b.autoAction(b.active.id); }
           else executeMassPlan(b, {}, true);
+          if (!b.isOver() && battleProgress(b) === before) throw Error('自动行动未推进回合，已暂停');
         });
         return !this.battle!.isOver();
       } finally { this.busy = false; }
@@ -134,7 +136,7 @@ export class McpSandbox {
       { name: '试战剑士', side: 'ally', weaponClass: 'sword' }, { name: mass ? '试战步兵队' : '试战射手', side: 'ally', scale: mass ? 'company' : 'hero', weaponClass: 'rifle' },
       { name: '对手剑士', side: 'enemy', weaponClass: 'sword' }, { name: mass ? '对手步兵队' : '对手射手', side: 'enemy', scale: mass ? 'company' : 'hero', weaponClass: 'rifle' },
     ];
-    if (!Array.isArray(participants) || participants.length < 2 || participants.length > 64) throw Error('participants 须为2—64个测试单位');
+    if (!Array.isArray(participants) || participants.length < 2) throw Error('participants 须包含至少两个测试单位');
     const roster = participants.map((p: { name?: string; side?: string; scale?: string; level?: number; weaponClass?: string; personnel?: number }, index) => {
       if (!p || !['ally','enemy'].includes(p.side ?? '') || !['hero','mook','company'].includes(p.scale ?? 'hero')
         || !Number.isInteger(p.level ?? 3) || (p.level ?? 3) < 1 || (p.level ?? 3) > 10 || !WEAPON_CLASSES[p.weaponClass ?? 'sword']) throw Error(`participants[${index}] 的 side、scale、level 或 weaponClass 无效`);
@@ -143,8 +145,8 @@ export class McpSandbox {
         level: p.level ?? 3, rulesVersion: 'v2', damageModel: 'wounds-v2', numericModel: 'graded-v1', loadModel: 'capacity-v2', weaponClass: p.weaponClass ?? 'sword', ...(p.personnel !== undefined ? { hpMax: p.personnel } : {}), traits: [] }, { seed: seed + ':' + index, registry: this.registry }).unit;
       unit.id = 'sandbox-unit-' + (index + 1); return unit;
     });
-    const setup = { mode: roster.length > 32 ? 'mass' : 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;
-    const choices: Record<string, readonly string[]> = { mode: ['small','mass'], field: ['plains','urban','siege','forest','mountain'], lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
+    const setup = { mode: 'small', field: 'plains', lighting: 'day', mapLayout: 'standard', objectiveMode: 'annihilation', siegeAttacker: 'ally', ...(args.setup as object ?? {}) } as EncounterSetup;
+    const choices: Record<string, readonly string[]> = { mode: ['small','mass'], field: ['plains','urban','siege','forest','mountain','sea','cosmos'], lighting: ['day','night'], mapLayout: ['standard','indoor'], objectiveMode: ['auto','annihilation','siege','control','escort','intercept'], siegeAttacker: ['ally','enemy'] };
     for (const [key, value] of Object.entries(setup)) if (!choices[key]?.includes(value)) throw Error('setup.' + key + ' 无效');
     const commanderId = roster.find(u => u.side === 'ally')?.id;
     const protagonistId = typeof args.protagonistId === 'string' ? args.protagonistId : undefined;

@@ -1,3 +1,5 @@
+import { isVehicleBody } from './vehicle-size.js';
+import type { CasualtyRolls } from './small/casualty-rolls.js';
 import { CHANNEL_BUFF_CONDITIONS } from './channel-buffs.js';
 import { clearEffectSources } from './effect-sources.js';
 import { displayNumber } from './display-number.js';
@@ -70,7 +72,7 @@ export function isPositiveCondition(id: string): boolean { return positive.has(i
 const negative = new Set(['taunted','charmed','blinded','confused','inaccurate', 'exposed', 'poisoned', 'bleeding', 'burning', 'silenced', 'stunned', 'restrained', 'disarmed', 'fearful', 'slowed', 'cursed', 'demoralized', 'weakened', 'vulnerable', 'wounded']);
 export function conditionImmunity(target: Combatant, id: string): string | undefined {
   if (id === 'charmed' && target.scale !== 'hero' && !isArmsV2(target.armsModel)) return '魅惑首版仅支持未随队独立个体，不支持编队';
-  if (id === 'poisoned' && !poisonFactor(target)) return target.body === 'vehicle' ? '封闭车体免疫中毒' : '非生物免疫中毒';
+  if (id === 'poisoned' && !poisonFactor(target)) return isVehicleBody(target.body) ? '封闭车体免疫中毒' : '非生物免疫中毒';
   if (id === 'fearful' && activeTraitIds(target).includes('steadfast')) return '不溃抵抗惊惧';
   if (['bleeding', 'fearful'].includes(id) && target.rulesVersion === 'v2' && activeTraitIds(target).includes('inorganic')) return '非生物免疫' + (id === 'bleeding' ? '流血' : '惊惧');
   return undefined;
@@ -180,12 +182,12 @@ export function pushPreview(context: ObservationContext, actor: Combatant, targe
   const fallDamage=drop>1?Math.max(1,Math.round(memberHealth(target)*Math.min(.3,.1*drop))):undefined;
   return { cell, label: terrainCellLabel(field, cell, landing)+(fallDamage?` · 坠落伤害${displayNumber(fallDamage)}生命`:''),...(fallDamage?{fallDamage}:{}),...(groundLanding?{groundLanding:true}:{}) };
 }
-export function applyPush(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect): PushPreview {
+export function applyPush(context: ObservationContext, actor: Combatant, target: Combatant, effect: PushEffect, rolls?: CasualtyRolls): PushPreview {
   const result = pushPreview(context, actor, target, effect);
   if (result.reason) return result;
   if (result.cell !== undefined) target.pos = result.cell;
   if(result.groundLanding)delete target.elevation;
-  if(result.fallDamage)applyCombatDamage(target,result.fallDamage,hasMemberHealth(target)?target.hp:1);
+  if(result.fallDamage)applyCombatDamage(target,result.fallDamage,hasMemberHealth(target)?target.hp:1,undefined,rolls);
   if (result.nodeId) target.formationPosition = result.nodeId;
   delete target.tacticalPose; revealUnit(context, target); return result;
 }
@@ -335,7 +337,7 @@ export function skillEffectValue(context: ObservationContext, actor: Combatant, 
       if (traitLevelsV16(target) && effect.traitId === 'fortification') entrench(future, future.pos !== undefined ? 'small' : 'mass');
       const regeneration = Math.min(recoveryCapacity(target), Math.max(0, regenerationAmount(future, context.traitRegistry) - regenerationAmount(target, context.traitRegistry)));
       let futureValue = tacticalStateValue(context, future);
-      if (!isAirborne(target) && flightCapabilityReason(target, context.conditions) && !flightCapabilityReason(future, context.conditions)) {
+      if (!isAirborne(target) && flightCapabilityReason(target, context.conditions, context) && !flightCapabilityReason(future, context.conditions, context)) {
         const flying = { ...future, airborne: true };
         futureValue += Math.max(0, tacticalStateValue(context, flying) - futureValue) * 0.65;
       }

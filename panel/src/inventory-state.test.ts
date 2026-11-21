@@ -1,3 +1,4 @@
+import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry } from '../../engine/src/index.js';
 import { materializeUnitRecord, unitRecordFromCombatant, updateUnitRecord } from './unit-state.js';
@@ -51,7 +52,7 @@ describe('物品与档案的原子事务', () => {
     expect(() => deleteUnitArchive({ ...save, battle: { kind: 'small', snap: { seed: 'ongoing' } } }, 'a')).toThrow(/战内/);
   });
 
-  it('换装、卸下、转移、再次部署保持同一物品；被换下装备回库', () => {
+  it('追加武器、指定卸下、转移及再次部署都保留原有武器和实物身份', () => {
     const save = initial(), before = structuredClone(save);
     const prize = save.inventory!.find((i) => i.id === 'prize')!.mechanics!;
     if (prize.kind !== 'weapon') throw new Error('fixture');
@@ -59,16 +60,16 @@ describe('物品与档案的原子事务', () => {
     const oldWeapon = save.storage![0]!.snapshot!.weapon!;
     let next = prepareInventoryTransaction(save, { id: 'equip-1', expectedRevision: 1, kind: 'equip', unitId: 'a', itemId: 'prize', slot: 'primary' });
     expect(save).toEqual(before);
-    expect(materializeUnitRecord(next.storage![0]!, registry).weapon!.id).toBe('prize');
-    expect(next.inventory!.find((i) => i.id === oldWeapon.id)!.equippedTo).toBeUndefined();
+    expect(batchWeapons(materializeUnitRecord(next.storage![0]!, registry))).toContainEqual(frozenPrize);
+    expect(next.inventory!.find((i) => i.id === oldWeapon.id)!.equippedTo?.unitId).toBe('a');
     expect(next.storage![0]).toMatchObject({ hp: 18, level: 3, base: { hpMax: 40 } });
     expect(() => prepareInventoryTransaction(next, { id: 'steal', expectedRevision: next.factRevision!, kind: 'equip', unitId: 'b', itemId: 'prize', slot: 'primary' })).toThrow(/卸下|已装备/);
-    next = prepareInventoryTransaction(next, { id: 'off', expectedRevision: next.factRevision!, kind: 'unequip', unitId: 'a', slot: 'primary' });
+    next = prepareInventoryTransaction(next, { id: 'off', expectedRevision: next.factRevision!, kind: 'unequip', itemId:'prize', unitId: 'a', slot: 'primary' });
     next = prepareInventoryTransaction(next, { id: 'give', expectedRevision: next.factRevision!, kind: 'assign', itemId: 'prize', unitId: 'b' });
     next = prepareInventoryTransaction(next, { id: 'equip-2', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'prize', unitId: 'b', slot: 'primary' });
     const reopened = JSON.parse(JSON.stringify(next)) as InventorySave;
-    expect(materializeUnitRecord(reopened.storage![1]!, registry).weapon).toEqual(frozenPrize);
-    expect(materializeUnitRecord(reopened.storage![0]!, registry).weapon).toBeUndefined();
+    expect(batchWeapons(materializeUnitRecord(reopened.storage![1]!, registry))).toContainEqual(frozenPrize);
+    expect(materializeUnitRecord(reopened.storage![0]!, registry).weapon?.id).toBe(oldWeapon.id);
     expect(reopened.inventory!.filter((i) => i.id === 'prize')).toHaveLength(1);
   });
   it('使用提交生命和数量，重放旧操作不覆盖后续治疗', () => {
@@ -102,7 +103,7 @@ describe('物品与档案的原子事务', () => {
     const saved = JSON.parse(JSON.stringify(next));
     const actor = materializeUnitRecord(saved.storage[0], registry);
     expect(actor.body ?? 'human').toBe('human');
-    expect(actor.weapon?.recipe?.mechanism).toBe(mechanism);
+    expect(batchWeapons(actor).find(w=>w.id==='heavy')?.recipe?.mechanism).toBe(mechanism);
     expect(actor.hp).toBe(before.storage![0]!.hp);
     expect(next.inventory!.find(i => i.id === 'heavy')?.equippedTo).toEqual({ unitId: 'a', slot: 'primary' });
     expect(save.storage).toEqual(before.storage);
@@ -124,15 +125,17 @@ describe('物品与档案的原子事务', () => {
     const item = next.inventory!.find((i) => i.id === 'prize')!;
     expect(item).toMatchObject({ id: old.id, name: '附魔战斧', revision: 2, equippedTo: old.equippedTo });
     expect(item.history).toBeUndefined();
-    expect(next.storage![0]!.snapshot!.weapon).toMatchObject({ id: old.id, name: '附魔战斧', channel: 'arcane', level: 9 });
+    expect(batchWeapons(next.storage![0]!.snapshot!).find(w=>w.id===old.id)).toMatchObject({ id: old.id, name: '附魔战斧', channel: 'arcane', level: 9 });
     expect([next.storage![0]!.hp, next.storage![0]!.level, next.storage![0]!.base.hpMax]).toEqual([actor.hp, actor.level, actor.base.hpMax]);
   });
-  it('从旧叙事库存明确补全一件规格，保留余量；已装备物品不能直接丢弃', () => {
+  it('从旧叙事库存明确补全一件规格，保留余量；减少全部已配发件数时同步卸下', () => {
     const save = initial(); save.inventory!.push({ id: 'legacy', name: '旧剑', lootType: 'weapon', qty: 3, note: '旧正文来源' });
     const next = prepareInventoryTransaction(save, { id: 'define', expectedRevision: 1, kind: 'define', itemId: 'legacy', spec: { kind: 'weapon', mechanism: 'sword', power: 4 } });
     expect(next.inventory!.find((i) => i.id === 'legacy')!.qty).toBe(2);
     expect(next.inventory!.find((i) => i.sourceItemId === 'legacy')).toMatchObject({ name: '旧剑', qty: 1, mechanics: { kind: 'weapon' } });
     const equipped = prepareInventoryTransaction(next, { id: 'equip', expectedRevision: next.factRevision!, kind: 'equip', itemId: 'prize', unitId: 'a', slot: 'primary' });
-    expect(() => prepareInventoryTransaction(equipped, { id: 'discard', expectedRevision: equipped.factRevision!, kind: 'discard', itemId: 'prize', qty: 1 })).toThrow(/卸下/);
+    const discarded = prepareInventoryTransaction(equipped, { id: 'discard', expectedRevision: equipped.factRevision!, kind: 'discard', itemId: 'prize', qty: 1 });
+    expect(discarded.inventory!.find(i=>i.id==='prize')!.qty).toBe(0);
+    expect(batchWeapons(discarded.storage![0]!.snapshot!).some(w=>w.id==='prize')).toBe(false);
   });
 });

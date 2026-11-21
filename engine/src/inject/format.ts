@@ -1,3 +1,5 @@
+import { isVehicleBody } from '../vehicle-size.js';
+import { volleyLabels } from '../equipment-batches.js';
 import { displayNumber } from '../display-number.js';
 import { isCommunicationLog } from '../diplomacy.js';
 import { smallBattleResult } from '../battle-result.js';
@@ -56,7 +58,7 @@ function hpLabel(u: Combatant): string {
 /** 战报状态行的兵力：编队写剩余总人数（载具编队按辆），个体写血量。成员生命分组、装备和精力由单位提示词提供。 */
 export function reportStrengthLabel(u: Combatant): string {
   if (u.scale === 'hero') return `血量${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
-  return u.body === 'vehicle' ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
+  return isVehicleBody(u.body) ? `剩余总数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}辆` : `剩余总人数${displayNumber(u.hp)}/${displayNumber(u.base.hpMax)}`;
 }
 
 /** 战报状态行的能量盾：剩余/容量（取整）与过载份数；倒下或撤离的单位不写。 */
@@ -173,10 +175,10 @@ function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
   const info = [isAirborne(u) ? '空中' : '', !over && u.suppression ? '受压制' : '', !over && u.tacticalPose ? '固守' : '', !over && (b.reloadCd.get(u.id) ?? 0) > 0 ? '装填中' : ''].filter(Boolean);
   return info.length ? '｜' + info.join('·') : '';
 }
-/** 环境与地标：状态摘要、逐轮战报与战斗终章共用。高度说明只在有高低差的地图出现。 */
+/** 环境与地标：状态摘要、逐轮战报与战斗终章共用。 */
 export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? undefined : b.battlefield): string[] {
-  const lines: string[] = [], relief = reportsHeights(field);
-  if (b.fieldTags.length || relief) lines.push([b.fieldTags.length ? '环境：' + environmentLabel(b.fieldTags) : '', relief ? HEIGHT_LEGEND : ''].filter(Boolean).join('｜'));
+  const lines: string[] = [];
+  if (b.fieldTags.length) lines.push('环境：' + environmentLabel(b.fieldTags));
   const marks = field ? landmarkSummary(field) : [];
   if (marks.length) lines.push('地标：' + marks.join('；'));
   if (field?.structures && !isMass(b)) {
@@ -215,8 +217,6 @@ function battleSituation(b: SmallBattle | MassBattle): string[] {
   return lines;
 }
 
-/** 有高低差的地图在战报里说明高度的含义，单位与地标随后只写数字。 */
-export const HEIGHT_LEGEND = '高度按层计，约一层楼，0为地面';
 /** 每个地标一项：名称、至多4个格子、地形与高度范围。旧存档的地标记录可能残缺，无效项略去。 */
 function landmarkSummary(field: BattlefieldSpec): string[] {
   const marks: { label?: unknown; cells?: unknown }[] = field.landmarks?.length ? field.landmarks : field.generation?.landmark ? [field.generation.landmark] : [];
@@ -299,7 +299,7 @@ function digestAttackLine(e: BattleLogEntry): string | undefined {
   if (!res) return undefined; // 装填中等无 resolution 的 attack 条目不进纪要
   const prefix = e.text.endsWith(res.text)
     ? e.text.slice(0, e.text.length - res.text.length).replace(/｜$/, '')
-    : '';
+    : e.volley ? '［'+volleyLabels[e.volley.mode]+'·'+e.volley.weapon+'］' : '';
   return `${prefix ? `${prefix}｜` : ''}${res.attackerName}→${res.defenderName} ${heightTag(res)}${hitText(res)}${fellMark(res)}`;
 }
 /** 速射合并行：段数、命中数、总损失；成员生命编队另写减员。 */
@@ -313,7 +313,9 @@ function volleyLine(volley: BattleLogEntry[]): string {
   const energy = energyText(sum('energyAbsorbed'), sum('energyOverloaded'), first.defenderScale === 'hero', converted ? volley.reduce((n, v) => n + (v.resolution!.energySpent ?? v.resolution!.energyAbsorbed ?? 0), 0) : undefined);
   const barrier = sum('barrierAbsorbed'), blocked = volley.filter(v => v.resolution!.hit && v.resolution!.penetrationFactor === 0).length;
   const defense = (barrier ? `，屏障吸收${Number(barrier.toFixed(1))}` : '') + (blocked ? blocked === hits ? '，未穿透' : `，其中${blocked}段未穿透` : '') + (volley.some(v => v.resolution!.shieldBroken) ? '，盾牌碎裂' : '');
-  return `${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${displayNumber(damage)}${life ? '生命' : ''}（${displayNumber(first.hpBefore)}→${displayNumber(last.hpAfter)}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
+  const action = volley[0]!.volley;
+  const weapons = action ? '［'+volleyLabels[action.mode]+'·'+[...new Set(volley.map(e => e.volley!.weapon))].join('、')+'］' : '';
+  return `${weapons}${first.attackerName}→${first.defenderName} ${heightTag(first)}${volley.length}段/${hits}中，损失${displayNumber(damage)}${life ? '生命' : ''}（${displayNumber(first.hpBefore)}→${displayNumber(last.hpAfter)}）${members}${energy}${defense}${fellMark(last)}${volley.some((v) => v.resolution!.crit) ? '·含暴击' : ''}`;
 }
 
 /** 技能自身位移受阻、技能因此没有生效的说明；位移本身由逐格移动写出。 */
@@ -385,6 +387,7 @@ export function compactEventGroups(entries: BattleLogEntry[], opts: { unresolved
       const volley = [e];
       while (!/借机|反击|反应/.test(e.text) && entries[i + 1]?.kind === 'attack' && entries[i + 1]?.resolution
         && !/借机|反击|反应/.test(entries[i + 1]!.text)
+        && entries[i + 1]!.volley?.action === e.volley?.action
         && entries[i + 1]!.resolution!.attackerId === e.resolution.attackerId
         && entries[i + 1]!.resolution!.defenderId === e.resolution.defenderId
         && entries[i + 1]!.round === e.round) volley.push(entries[++i]!);
@@ -447,18 +450,25 @@ export function roundDigest(
   b: SmallBattle | MassBattle,
   era?: string,
   _registry?: Map<string, import('../types.js').Trait>,
-  opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string } = {},
+  opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string; formatEvents?: (entries: readonly BattleLogEntry[], text: string) => string } = {},
 ): string {
-  const rounds = [...new Set((b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => !e.intentFailure && (DIGEST_KINDS.has(e.kind) || isCommunicationLog(e))).map((e) => e.round))].sort(
-    (x, y) => x - y,
-  );
+  const byRound = new Map<number, BattleLogEntry[]>();
+  for (const entry of b.isOver() ? b.log : b.visibleLog('ally')) {
+    if (entry.intentFailure || !DIGEST_KINDS.has(entry.kind) && !isCommunicationLog(entry)) continue;
+    const entries = byRound.get(entry.round);
+    if (entries) entries.push(entry);
+    else byRound.set(entry.round, [entry]);
+  }
+  const rounds = [...byRound.keys()].sort((x, y) => x - y);
   const takeRounds = opts.lastRounds ? rounds.slice(-opts.lastRounds) : rounds;
   const lines: string[] = [];
   for (const r of takeRounds) {
-    const entries = (b.isOver() ? b.log : b.visibleLog('ally')).filter((e) => !e.intentFailure && e.round === r && (DIGEST_KINDS.has(e.kind) || isCommunicationLog(e)));
-    if (!entries.length) continue;
+    const entries = byRound.get(r)!;
     lines.push(`【第${r}回合】`);
-    lines.push(...compactEvents(entries).map((line) => '▸ ' + line));
+    for (const group of compactEventGroups(entries)) {
+      const line = opts.formatEvents ? opts.formatEvents(entries.slice(group.first, group.last + 1), group.text) : group.text;
+      lines.push('▸ ' + line);
+    }
   }
   if (!lines.length) return '';
   const mass = isMass(b);

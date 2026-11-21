@@ -61,6 +61,12 @@ export function traitParameter(parameter: TraitParameter, level: number, model?:
     : progression({traitLevelModel:model}) && parameter in PROGRESSION_PARAMETERS ? PROGRESSION_PARAMETERS[parameter as keyof typeof PROGRESSION_PARAMETERS] : TRAIT_PARAMETERS[parameter as keyof typeof TRAIT_PARAMETERS];
   return table[Math.max(0, Math.min(9, Math.round(level) - 1))]!;
 }
+export function medicRescueBonus(level: number, model?: unknown): number {
+  return level ? traitParameter('medicRescue', level, model) - 50 : 0;
+}
+export function smallRescuePercent(level: number, model?: unknown): number {
+  return 25 + medicRescueBonus(level, model);
+}
 /** 原五项保留 ceil(L/2)；P1 保留旧 L5 成本和已有强版本 L8 成本。 */
 export function gradedTraitCost(id: string, level: number): number {
   if (TERRAIN_GRADED_TRAITS.includes(id)) return Math.ceil(level / 2);

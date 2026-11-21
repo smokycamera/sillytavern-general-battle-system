@@ -140,7 +140,7 @@ function numeric(value: string, key: string): string {
 }
 const numericKeys = new Set(['hp', 'hpMax', 'level', 'count', 'qty', 'quality', 'rounds', 'battles', 'reserves', 'speed', 'morale', 'xp', 'xpProgress', 'xpValue', 'memberHp', 'atk', 'def', 'spd', 'moraleMax']);
 const booleanKeys = new Set(['shield', 'mount', 'stabilized', 'permanent', 'retired']);
-const textKeys = new Set(['name', 'item', 'note', 'reason', 'id', 'to', 'source', 'data']);
+const textKeys = new Set(['name', 'item', 'note', 'reason', 'id', 'to', 'source', 'data', 'mount', 'aboard']);
 const specKeys = new Set(['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec', 'skills']);
 const enumAliases: Record<string, Record<string, string>> = {
   side: { 我方: 'ally', 友方: 'ally', 友军: 'ally', allied: 'ally', friendly: 'ally', 敌方: 'enemy', 敌军: 'enemy', hostile: 'enemy' },
@@ -252,9 +252,10 @@ export function normalizedAttributes(tag: ProtocolTag, allowed: readonly string[
     // 繁体正文先换成简体再查词表；名称、说明、编号和 data 保留原文。
     const effectSpecification = key === 'effects' && ['effect', 'spawn'].includes(tag.name);
     if (!textKeys.has(key)) value = specKeys.has(key) || effectSpecification ? simplifiedSpecification(value) : simplifiedChinese(value);
+    if (key === 'platform') value = normalizeNarrativeSpec(value, 'unit');
     if (numericKeys.has(key)) value = numeric(value, key);
-    if (tag.name === 'spawn' && key === 'level') value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
-    if (booleanKeys.has(key) && (key !== 'shield' || /^(?:true|false|1|0|yes|no|是|否|有|无)$/i.test(value))) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
+    if (key === 'level' && (tag.name === 'spawn' || tag.name === 'unit_set')) value = normalizeNarrativeSpec('L' + value, 'unit').replace(/^L/i, '');
+    if (booleanKeys.has(key) && (!['shield','mount'].includes(key) || /^(?:true|false|1|0|yes|no|是|否|有|无)$/i.test(value))) value = ({ '1': 'true', '0': 'false', yes: 'true', no: 'false', 是: 'true', 否: 'false', 有: 'true', 无: 'false' } as Record<string, string>)[value.toLowerCase()] ?? value.toLowerCase();
     if (enumAliases[key]) value = enumAliases[key]![value.toLowerCase()] ?? value.toLowerCase();
     if (key === 'env') value = value.toLowerCase();
     if (['weapon', 'weapon2', 'armor', 'shield', 'shieldSpec', 'spec'].includes(key)) {
