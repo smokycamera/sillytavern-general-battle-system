@@ -79,14 +79,16 @@ export function deleteFallenGear<T extends InventorySave>(save: T, ids: readonly
   return { ...save, fallenGear: remaining?.length ? remaining : undefined };
 }
 
-function rememberFallenGear(next: InventorySave, previous: InventoryItem[], eligibleUnits: ReadonlySet<string>, floor: number,
-  battleId?: string, broken = new Set<string>()): void {
+export function rememberFallenGear(next: InventorySave, previous: InventoryItem[], eligibleUnits: ReadonlySet<string>, floor: number,
+  battleId?: string, broken = new Set<string>()): Map<string, string> {
   const kept = new Map(next.inventory?.map(item => [item.id, item.qty]));
   const saved = new Set(next.fallenGear?.map(entry => entry.item.id));
   const additions: FallenGear[] = [];
+  const stashed = new Map<string, string>();
   for (const item of previous) {
     if (!item.equippedTo || !eligibleUnits.has(item.equippedTo.unitId) || broken.has(item.id)
-      || !item.mechanics || item.mechanics.kind === 'item' || item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural'
+      || !item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single'
+      || item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural'
       || item.mechanics.kind === 'armor' && item.mechanics.value.tier === 0 && item.name === '无甲') continue;
     const qty = item.qty - (kept.get(item.id) ?? 0);
     if (qty <= 0) continue;
@@ -101,8 +103,10 @@ function rememberFallenGear(next: InventorySave, previous: InventoryItem[], elig
     } else part = structuredClone(equipment);
     additions.push({ storedAt: floor, expiresAt: floor + (next.fallenGearFloors ?? FALLEN_GEAR_FLOORS), battleId, item: part });
     saved.add(part.id);
+    stashed.set(item.id, part.id);
   }
   if (additions.length) next.fallenGear = [...next.fallenGear ?? [], ...additions];
+  return stashed;
 }
 
 /** Reconcile hidden loot from the same finalized battle whose inventory write was validated. */

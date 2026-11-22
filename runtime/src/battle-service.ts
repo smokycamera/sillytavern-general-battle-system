@@ -367,7 +367,7 @@ export class BattleService {
     if (!namespace || context !== this.inventoryContext()) throw Error('聊天或档案已变化，请重新扫描');
     return this.transact(before => {
       if (expectedRevision !== (before.factRevision ?? 0) || namespace !== this.host.namespace()) throw Error('扫描结果已过期');
-      return prepareAiScanProposal(before, namespace, text);
+      return prepareAiScanProposal(before, namespace, text, this.host.context().chat?.length ?? 0);
     });
   }
   deleteBattleReport(id: string): Promise<PersistReceipt> { return this.transact(before => prepareReportDeletion(before, id)); }
@@ -402,7 +402,7 @@ export class BattleService {
       const current = this.host.messageBySource(proposal.source.messageId);
       if (proposal.origin !== 'ai-scan' && (!current || !current.complete || namespaceOf(current) !== namespace || current.swipeId !== proposal.source.swipeId || protocolExcerpt(current.text) !== (proposal.originalText ?? proposal.source.text))) throw Error('来源消息已改变或删除，请重新扫描');
       if (sourceCommitted(before, proposal.sourceKey)) throw Error('此消息已入账，不能重复执行');
-      return prepareNarrativeTransaction(before, { ...proposal, status: 'pending' }, namespace, true);
+      return prepareNarrativeTransaction(before, { ...proposal, status: 'pending' }, namespace, true, this.host.context().chat?.length ?? 0);
     }, { operationId: 'narrative:' + id, messageTags: tags });
   }
   correctProposal(id: string, text: string): Promise<PersistReceipt> {
@@ -542,7 +542,7 @@ export class BattleService {
       const proposals = (before.proposals ?? []).filter(p => !upgrade || p.id !== same!.id).map((p): NarrativeProposal => p.sourceKey === proposal.sourceKey && ['pending', 'legacy', 'failed', 'unresolved'].includes(p.status) ? { ...p, status: 'stale', reason: '已被新消息修订替代' } : p);
       let candidate = { ...before, proposals: [...proposals, proposal] };
       if (proposal.status === 'pending' && !proposal.expected?.manualOnly && narrativeAutoApproval(candidate)) {
-        try { candidate = prepareNarrativeTransaction(candidate, proposal, namespace) as typeof candidate; }
+        try { candidate = prepareNarrativeTransaction(candidate, proposal, namespace, false, this.host.context().chat?.length ?? 0) as typeof candidate; }
         catch (error) { proposal.reason = String(error); proposal.status = /过期|聊天|分支|战内|未结算/.test(proposal.reason) ? 'stale' : 'unresolved'; }
       }
       // Long chats save slowly: let an open panel show the save while it runs.

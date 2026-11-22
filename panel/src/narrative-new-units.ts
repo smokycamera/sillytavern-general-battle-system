@@ -4,6 +4,7 @@
  * spawn 写的 id 在解析时已丢弃，编号由插件分配。已有单位的编号永远不会被改指。
  */
 import type { Ride } from '../../engine/src/platforms.js';
+import type { ItemSpecification } from '../../engine/src/items.js';
 import type { UnitRecord } from './unit-state.js';
 import type { Suggestion } from './tags.js';
 import type { NarrativeSave } from './narrative-state.js';
@@ -16,6 +17,7 @@ import type { InventoryItem } from './inventory-state.js';
 
 type Ids = ReturnType<typeof narrativeIds>;
 type UnitSet = Extract<Suggestion, { kind: 'unit-set' }>;
+type IncomingGear = { item: InventoryItem; change?: { name?: string; spec: ItemSpecification } };
 export interface NewUnitPlan {
   events: Suggestion[];
   /** Real ids of the units created from unit_set. */
@@ -42,10 +44,10 @@ function creatable(event: UnitSet): boolean {
   return typeof data.name === 'string' && !!data.name.trim() && ['ally', 'enemy'].includes(String(data.side)) && ['hero', 'company'].includes(String(data.scale))
     && (data.scale === 'hero' || typeof data.hpMax === 'number' || typeof base?.hpMax === 'number');
 }
-function spawnFromUnitSet(event: UnitSet, incoming: InventoryItem[], ids: Ids, reforgedNames: ReadonlyMap<string, string>): { spawn: Suggestion; rest: Record<string, unknown> } {
+function spawnFromUnitSet(event: UnitSet, incoming: IncomingGear[], ids: Ids): { spawn: Suggestion; rest: Record<string, unknown> } {
   const attrs: Record<string, string> = {}, rest: Record<string, unknown> = {};
   for (const [field, value] of Object.entries(event.data)) {
-    const attr = incoming.some(item => unitSetReferencesGear(field, value, item, ids.realId, reforgedNames)) ? undefined : SPAWN_FIELDS[field];
+    const attr = incoming.some(({item, change}) => unitSetReferencesGear(field, value, item, ids.realId, change)) ? undefined : SPAWN_FIELDS[field];
     const text = attr === undefined ? undefined : ['string', 'number', 'boolean'].includes(typeof value) ? String(value)
       : field === 'traits' && Array.isArray(value) && value.every(v => typeof v === 'string') ? value.join(',') : undefined;
     if (text === undefined) rest[field] = value; else attrs[attr!] = text;
@@ -58,7 +60,7 @@ function spawnFromUnitSet(event: UnitSet, incoming: InventoryItem[], ids: Ids, r
 export function planNewUnits(save: NarrativeSave, proposalId: string, input: Suggestion[], ids: Ids): NewUnitPlan {
   const records = save.storage ?? [], existing = new Set(records.map(r => r.id));
   const events = [...input], created = new Set<string>(), handles = new Map<string, string>(), patches = new Map<string, Record<string, unknown>>(), items = new Map<string, SpawnItem[]>();
-  const reforgedNames = new Map(input.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
+  const reforges = new Map(input.flatMap(event => event.kind === 'reforge' ? [[event.id, event] as const] : []));
   const aliases = new Map<string, number>();
   const named = (name: unknown): string[] => {
     if (typeof name !== 'string' || !name.trim()) return [];
@@ -76,8 +78,18 @@ export function planNewUnits(save: NarrativeSave, proposalId: string, input: Sug
     if (matches.length === 1) { for (const i of indexes) events[i] = { ...events[i] as UnitSet, id: matches[0]! }; continue; }
     const creator = indexes.find(i => creatable(events[i] as UnitSet));
     if (creator === undefined) continue; // Left to the missing-record error.
-    const incoming = events.flatMap(event => event.kind === 'give' && event.to?.some(id => key(id) === alias) ? save.inventory?.filter(item => item.id === event.id) ?? [] : []);
-    const { spawn, rest } = spawnFromUnitSet(events[creator] as UnitSet, incoming, ids, reforgedNames), id = newUnitId(proposalId, creator), handed = (events[creator] as UnitSet).items;
+    const candidate = events[creator] as UnitSet;
+    const inventory = save.inventory ?? [];
+    const incoming: IncomingGear[] = inventory.filter(item => reforges.has(item.id) && !item.assignedTo && candidate.data.side === 'ally'
+      || events.some(event => event.kind === 'give' && event.id === item.id && event.to?.some(id => key(id) === alias)))
+      .map(item => ({ item, change: reforges.get(item.id) }));
+    for (const [index, event] of events.entries()) {
+      if (event.kind !== 'add' || !event.item || !event.spec
+        || (event.to ? key(event.to) !== alias : candidate.data.side !== 'ally')) continue;
+      const item = { id: `loot-${proposalId}-${index}`, name: event.item, qty: event.qty, lootType: event.lootType };
+      incoming.push({ item, change: { spec: event.spec } });
+    }
+    const { spawn, rest } = spawnFromUnitSet(candidate, incoming, ids), id = newUnitId(proposalId, creator), handed = candidate.items;
     events[creator] = spawn; created.add(id); aliases.set(alias, creator);
     if (Object.keys(rest).length) patches.set(id, rest);
     if (handed?.length) items.set(id, handed);

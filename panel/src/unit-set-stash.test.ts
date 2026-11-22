@@ -14,10 +14,10 @@ function setup(side: 'ally' | 'enemy' = 'ally', inventory: InventoryItem[] = [])
   unit.id = 'a';
   return prepareInventoryState({ storage: [unitRecordFromCombatant(unit)], rosterIds: [], factRevision: 1, storySync: true, inventory }) as NarrativeSave;
 }
-function transact(save: NarrativeSave, body: string, messageId = 'reply') {
+function transact(save: NarrativeSave, body: string, messageId = 'reply', floor = 0) {
   const source: MessageEnvelope = { characterId: 'c', chatId: 'chat', branchId: 'b', messageId, swipeId: '0', role: 'assistant', complete: true, generationId: messageId, text: `<tb>${body}</tb>` };
   const ns = namespaceOf(source), binding = captureGeneration(save, ns, messageId); binding.complete = true;
-  return prepareNarrativeTransaction(save, proposalFromMessage(source, binding)!, ns, true);
+  return prepareNarrativeTransaction(save, proposalFromMessage(source, binding)!, ns, true, floor);
 }
 const named = (save: NarrativeSave, name: string) => save.inventory!.filter(i => i.name === name && i.qty > 0);
 const weaponOf = (save: NarrativeSave) => save.inventory!.find(i => i.equippedTo?.unitId === 'a' && i.equippedTo.slot === 'primary')!;
@@ -212,6 +212,96 @@ it('uses stock limits only for the equipment involved in the same narrative tran
   expect(named(enough, '轻弩')[0]).toMatchObject({ qty: 6, equippedTo: { unitId: company, slot: 'primary' } });
   expect(named(enough, '旧斧')[0]?.qty).toBe(1);
   expect(named(enough, '备用剑')[0]?.qty).toBe(1);
+});
+
+it.each(['add', 'give', 'new unit'] as const)('issues the same lot when the loadout omits its name after %s', operation => {
+  const spawn = '<spawn name="步兵" side="ally" scale="company" hpMax="6" weapon="旧矛:长兵器L1×6"/>';
+  const add = '<add item="制式剑" spec="剑L3" qty="3"/>';
+  const save = transact({}, spawn + (operation === 'give' ? add : ''), 'opening');
+  const issued = operation === 'give' ? named(save, '制式剑')[0] : undefined;
+  const inventoryChange = issued ? `<give id="${narrativeIds(save).publicId(issued.id)}" to="u1" qty="3"/>` : add;
+  const set = operation === 'new unit'
+    ? '<unit_set id="u9" name="援兵" side="ally" scale="company" hpMax="6" weapon="剑L3×3"/>'
+    : '<unit_set id="u1" weapon="剑L3×3"/>';
+  const next = transact(save, set + inventoryChange);
+  const unit = next.storage!.find(record => record.name === (operation === 'new unit' ? '援兵' : '步兵'))!;
+  expect(named(next, '剑L3')).toHaveLength(0);
+  expect(named(next, '制式剑')).toEqual([expect.objectContaining({ qty: 3, equippedTo: { unitId: unit.id, slot: 'primary' } })]);
+  if (issued) expect(named(next, '制式剑')[0]!.mechanics).toEqual(issued.mechanics);
+});
+
+it.each(['库存剑:剑L3×3', '剑L3×3'] as const)('issues the reforged lot with counted loadout %s', weapon => {
+  const save = transact({}, '<spawn name="步兵" side="ally" scale="company" hpMax="6" weapon="旧矛:长兵器L1×6"/><add item="库存剑" spec="剑L2" qty="3"/>', 'opening');
+  const original = named(save, '库存剑')[0]!;
+  const id = narrativeIds(save).publicId(original.id);
+  const next = transact(save, `<unit_set id="u1" weapon="${weapon}"/><reforge id="${id}" name="升阶剑" spec="剑L3"/>`);
+  expect(named(next, '库存剑')).toHaveLength(0);
+  expect(named(next, '剑L3')).toHaveLength(0);
+  expect(named(next, '升阶剑')).toEqual([expect.objectContaining({
+    id: original.id, qty: 3, equippedTo: {unitId: save.storage![0]!.id, slot: 'primary'},
+    mechanics: {kind: 'weapon', value: expect.objectContaining({ recipe: expect.objectContaining({power: 3, seed: original.mechanics?.kind === 'weapon' && original.mechanics.value.recipe?.seed}) })},
+  })]);
+});
+
+it('allocates mixed versions to explicit rows before using the remaining stock for flexible rows', () => {
+  const save = transact({}, '<spawn name="步兵" side="ally" scale="company" hpMax="6" weapon="制式剑:剑L3+1伤害×3"/><add item="制式剑" spec="剑L3" qty="3"/>', 'opening');
+  const enhanced = named(save, '制式剑').find(item => item.equippedTo)!;
+  const plain = named(save, '制式剑').find(item => !item.assignedTo)!;
+  save.inventory = [plain, ...save.inventory!.filter(item => item !== plain)];
+  const id = narrativeIds(save).publicId(plain.id);
+  const next = transact(save, `<add id="${id}" qty="1"/><unit_set id="u1" weapon="制式剑:剑L3×3,制式剑:剑L3+1伤害×3"/>`);
+  expect(named(next, '制式剑').filter(item => item.equippedTo).map(item => [item.qty, item.id === enhanced.id])).toEqual([[3, false], [3, true]]);
+  expect(named(next, '制式剑').find(item => item.id === plain.id)?.qty).toBe(1);
+});
+
+it('does not tie same-name gear of a different level to a stock change', () => {
+  const save = transact({}, '<spawn name="步兵" side="ally" scale="company" hpMax="6" weapon="旧矛:长兵器L1×6"/>', 'opening');
+  const next = transact(save, '<add item="制式剑" spec="剑L2" qty="3"/><unit_set id="u1" weapon="制式剑:剑L3×3"/>');
+  expect(named(next, '制式剑')).toHaveLength(2);
+  expect(named(next, '制式剑').find(item => item.equippedTo)).toMatchObject({ qty: 3, mechanics: {value: {recipe: {power: 3}}} });
+  expect(named(next, '制式剑').find(item => !item.assignedTo)).toMatchObject({ qty: 3, mechanics: {value: {recipe: {power: 2}}} });
+});
+
+it('treats a second take from an exhausted loot ID as zero while still rejecting unknown IDs', () => {
+  const opening = transact({}, '<spawn name="敌兵" side="enemy" scale="company" hpMax="5" weapon="旧剑:剑L2×5"/>', 'opening');
+  const save = deleteUnitArchive(opening, opening.storage![0]!.id, 0);
+  const id = narrativeIds(save).publicId(save.fallenGear!.find(entry => entry.item.name === '旧剑')!.item.id);
+  const next = transact(save, `<take id="${id}" qty="6"/><take id="${id}" qty="1"/>`);
+  expect(next.fallenGear).toBeUndefined();
+  expect(notices(next)).toContain('已移除 5/6 件');
+  expect(notices(next)).toContain('已移除 0/1 件');
+  expect(() => transact(save, `<take id="${id}" qty="6"/><take id="w999" qty="1"/>`)).toThrow('物品不存在');
+});
+
+it.each([
+  { take: 0, equipped: 4, stashed: 2, loadout: true },
+  { take: 1, equipped: 4, stashed: 1 },
+  { take: 2, equipped: 4, stashed: 0, loadout: true },
+  { take: 3, equipped: 3, stashed: 0 },
+])('accounts for wound deaths and a same-reply take of $take copies once', ({ take, equipped, stashed, loadout }) => {
+  const save = transact({}, '<spawn name="步兵" side="ally" scale="company" hpMax="6" weapon="旧矛:长兵器L1×6" armor="皮甲:轻甲L2×6" items="护符:佩戴L2+屏障L2×6"/>', 'opening');
+  const record = save.storage![0]!, unit = structuredClone(record.snapshot!);
+  setStrength(unit, 2);
+  unit.recoverableWounded = 4;
+  save.storage = [unitRecordFromCombatant(unit, record)];
+  const polearm = named(save, '旧矛')[0]!, charm = named(save, '护符')[0]!;
+  const { publicId } = narrativeIds(save);
+  const summary = '<recover id="u1" kill="2"/>';
+  const discard = take ? [polearm, charm].map(item => `<take id="${publicId(item.id)}" qty="${take}"/>`).join('') : '';
+  const equip = loadout ? '<unit_set id="u1" weapon="旧矛:长兵器L1×4"/>' : '';
+  for (const events of [summary + discard + equip, equip + discard + summary]) {
+    const next = transact(save, events, 'reply', 12);
+    expect(next.storage![0]).toMatchObject({ hp: 2, recoverableWounded: 2 });
+    expect(named(next, '旧矛')).toEqual([expect.objectContaining({id: polearm.id, qty: equipped, equippedTo: polearm.equippedTo})]);
+    const loot = next.fallenGear?.find(entry => entry.item.name === '旧矛');
+    if (stashed) expect(loot).toMatchObject({ storedAt: 12, expiresAt: 12 + FALLEN_GEAR_FLOORS, item: {qty: stashed, sourceItemId: polearm.id} });
+    else expect(loot).toBeUndefined();
+    expect(named(next, '护符')[0]!.qty).toBe(equipped);
+    expect(next.fallenGear?.find(entry => entry.item.name === '护符')?.item.qty ?? 0).toBe(stashed);
+    // Removing the weapons and charms does not affect armor from the same deaths.
+    expect(named(next, '皮甲')[0]!.qty).toBe(4);
+    expect(next.fallenGear?.find(entry => entry.item.name === '皮甲')?.item.qty).toBe(2);
+  }
 });
 
 describe('unit_set 换装与库存同一件实物', () => {
