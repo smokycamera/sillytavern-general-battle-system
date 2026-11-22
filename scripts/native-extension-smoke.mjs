@@ -211,6 +211,8 @@ try {
   await languageButton.click();
   check('战斗中切换英文只更新视图',
     await frame.locator('[data-action="grid-endturn"]').innerText() === 'End Turn' &&
+    await frame.locator('.map-key summary').innerText() === 'Legend' &&
+    await frame.locator('.command-finish .primary').innerText() === 'Execute Command' &&
     await page.evaluate(count => __metadataSaves + __fullSaves === count, writesBeforeLanguage) &&
     JSON.stringify((await state()).battle) === JSON.stringify(battleBeforeLanguage));
   await languageButton.click();
@@ -244,10 +246,24 @@ try {
   check('英文战报可以查看结算结果并发送完整记录',
     await frame.locator('.report-workspace h2').innerText() === 'Battle Report' &&
     await frame.locator('.report-workspace [data-action="out-digest"]').innerText() === 'Send Full Report');
+  await frame.locator('.report-workspace [data-action="out-digest"]').click();await idle(frame);
+  check('发送英文逐轮战报包含英文事件和环境',await page.evaluate(() => {
+    const message = context.chat.at(-1).mes;
+    return message.includes('【Round-by-Round Report') && message.includes('Deployment:') &&
+      message.includes('Environment:') && !/布阵：|环境：|高度\d|血量\d/.test(message);
+  }));
   await frame.locator('.workspace-nav [data-tab="settings"]').click();
   check('英文指挥设置能识别敌方与第三方选项', await frame.locator('label:has([data-role="llm-faction-enemy"])').innerText() === 'Command Enemies' &&
     await frame.locator('label:has([data-role="llm-faction-neutral"])').innerText() === 'Command Third-Party Forces');
   check('英文设置显示实际用于发送的默认提示', (await frame.locator('[data-role="prompt-template"][data-section="settlement"]').inputValue()).startsWith('Describe the battle using the recorded events.'));
+  check('英文附加提示词编辑器和宿主注入使用相同默认模板',
+    (await frame.locator('[data-role="prompt-template"][data-section="facts"]').inputValue()).startsWith('【Current Battle Record】') &&
+    (await frame.locator('[data-role="prompt-template"][data-section="items"]').inputValue()).startsWith('【Inventory】') &&
+    await page.evaluate(() => {
+      const content = __prompts['tavern-battle-native:context'];
+      return content.includes('【Current Battle Record】') && content.includes('【Unit Records】') && content.includes('## This Reply') &&
+        content.includes('Out-of-battle record updates are available.') && !content.includes('## 本次回复');
+    }));
   await frame.locator('.workspace-nav [data-tab="reports"]').click();
   await frame.locator('.report-workspace [data-action="out-epilogue"]').click();await idle(frame);
   check('发送英文终章使用英文提示和装备数量说明', await page.evaluate(() => {
@@ -257,7 +273,7 @@ try {
   }));
   check('战报只插入用户消息，不自动生成，并保留草稿附件',await page.evaluate(()=>__generations===0&&context.chat.at(-1).is_user===true&&document.getElementById('send_textarea').value.includes('玩家草稿')&&document.getElementById('pending-file').value==='fixture-attachment.txt'&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='inserted'));
   await languageButton.click();
-  await frame.locator('[data-action="delivery-generate"]').first().click();await idle(frame);
+  await frame.locator('[data-action="delivery-generate"][data-key="epilogue"]').click();await idle(frame);
   check('用户手动点击发送后只生成一次',await page.evaluate(()=>__generationType==='regenerate'&&__generations===1&&Object.values(__tavernBattleNative.service.snapshot().reportDeliveries)[0].receipts.epilogue.status==='sent'));
   const before=await state();
   const pending=await page.evaluate(async()=>{window.__failure=true;const receipt=await __tavernBattleNative.service.setPromptSettings({sections:{facts:{template:'待确认事实 {{content}}'}}});return {receipt,candidate:__tavernBattleNative.service.store.pendingOperation().candidate};});

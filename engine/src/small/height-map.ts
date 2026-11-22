@@ -5,6 +5,7 @@ import { traitLevel, climbFactor } from '../trait-levels.js';
 import type { Combatant } from '../types.js';
 import type { BattlefieldSpec, Terrain } from './spatial.js';
 import type { BattlefieldPlan } from './battlefield-plan.js';
+import { formatDisplayText } from '../display-text.js';
 export interface HeightTransition {
     from: number;
     to: number;
@@ -93,11 +94,14 @@ export function reportsHeights(field: BattlefieldSpec | undefined): field is Bat
     return field?.spatialRulesVersion === 2 && (!!field.groundHeight?.some(h => h > 0)
         || !!field.structures?.some(s => !!s && (s.top === true || (s.deckHeight ?? 0) > 0)));
 }
-export function heightDescription(field: BattlefieldSpec, cell: number): string {
+export function heightDescription(field: BattlefieldSpec, cell: number, text?: typeof formatDisplayText): string {
     if (field.spatialRulesVersion !== 2)
         return '';
     const top = displayHeightAt(field, cell), ground = groundHeightAt(field, cell);
     const access = field.heightTransitions?.filter(e => (e.from === cell || e.to === cell) && e.kind !== 'cliff');
+    if (text) return text('高度{height}', { height: top })
+        + (top !== surfaceHeightAt(field, cell) && ground ? text('（地面{height}）', { height: ground }) : '')
+        + (access?.length ? text(access.some(e => e.kind === 'stairs') ? '（有阶梯连接）' : '（有坡道连接）') : '');
     return `高度${top}${top !== surfaceHeightAt(field, cell) && ground ? `（地面${ground}）` : ''}${access?.length ? `（有${access.some(e => e.kind === 'stairs') ? '阶梯' : '坡道'}连接）` : ''}`;
 }
 export function initializeHeightMap(field: BattlefieldSpec, plan: BattlefieldPlan | undefined): void {

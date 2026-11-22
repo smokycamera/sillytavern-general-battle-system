@@ -62,8 +62,7 @@ import { updateRegion, BattleCamera, selectTextareaRange } from './view-dom.js';
 import { installMapGestures, fitMap, mapScale } from './map-gestures.js';
 import { executeMassPlan, executeAndSaveAsync as executeAndSave } from './battle-execution.js';
 import { TACTICAL_PREFERENCES, normalizeTactic } from '../../engine/src/tactical-preference.js';
-import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, reportForDelivery, reportNarrationInstructions, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
-import { englishReportAttack } from './report-language.js';
+import { battleIdOf, knownBattleUnits, publicBattleEvents, withBattleReportQueries, battleEpilogue, archivedNarrativeEvents, archivedDigest, reportForDelivery, reportNarrationInstructions, makeNarrativeBatch, beginNarrativeDelivery, finishNarrativeDelivery, completedBattleRounds, fullRoundReport, type BattleReport, type BattleDeliveries, type NarrativeBatch } from './battle-reports.js';
 import { battleLogText, lastBattleAction, traceLocations } from './battle-presentation.js';
 import { promptScopeControls } from './prompt-settings.js';
 import { narrativeProjectionDetails } from './narrative-controller.js';
@@ -1363,7 +1362,7 @@ function renderEmbeddedWorldbookSettings(): string {
 }
 function renderWorkspaceSettings(): string {
   const saved = viewSave(), view = llmSettingsView();
-  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic, llmWorldbookPicker.render(view.settings))}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? ''), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts, uiLanguage())}<section><h2>${ui("显示与操作")}</h2><button data-action="theme-toggle">${ui("切换深浅主题")}</button></section>
+  return `${mcpBridge?.render() ?? ''}${renderLlmSettings(view.settings, view.error ?? llmDiagnostic, llmWorldbookPicker.render(view.settings))}${renderEmbeddedWorldbookSettings()}${promptScopeControls(saved.promptSettings, narrativeProjectionDetails(saved, adapter.recentPromptText?.() ?? '', uiLanguage()), (saved.storage ?? []).filter(visibleUnitRecord))}${renderPromptSettings(saved.promptSettings, promptDrafts, uiLanguage())}<section><h2>${ui("显示与操作")}</h2><button data-action="theme-toggle">${ui("切换深浅主题")}</button></section>
     <section><h2>${ui("保存与恢复")}</h2><p>${ui(state.saveReceipt?.status === 'local-only' ? '目前仅确认本地副本，酒馆尚未确认保存。' : '单位档案和战报随当前聊天保存。保存失败时会在顶部显示。')}</p><button data-action="save-retry">${ui("重试保存")}</button>${controller.migrationReview() ? '' : renderMigrationReview()}</section>
     <details class="workspace-diagnostics"><summary>${ui("运行信息")}</summary><p>${ui("战斗结果由本设备计算。伤害、命中和状态的详细过程可在战报中查看。")}</p><p>${ui(controller.capabilities.injection ? '已支持在续写剧情时参考当前战斗进度。' : '当前酒馆暂不支持自动提供剧情参考。')}</p></details>`;
 }
@@ -2148,21 +2147,21 @@ function renderAbilityDialog(): string {
 
 function massOrderPreviewText(b: MassBattle, order: Order): string {
   const result = formationQueries.preview(b, order);
-  if (result.reason) return '不可下达：' + result.reason;
+  if (result.reason) return ui("不可下达：{reason}", { reason: ui(result.reason) });
   const unit = b.byId(order.unitId);
   const fatigueUnit = order.type === 'ability' && order.abilityActorId ? b.byId(order.abilityActorId) : unit;
   const skill = order.type === 'ability' ? fatigueUnit.abilities.find(a => a.id === order.abilityId) : undefined;
   const exertion = (skill ? skillExertion(fatigueUnit, skill) : order.type === 'charge' ? 2 : ['hold', 'brace', 'retreat'].includes(order.type) ? 0 : 1) + (result.extraFatigue ?? 0);
   const fatigue = resourceRound(fatigueAfter(fatigueUnit, exertion, order.type === 'hold' && !order.haste) - fatigueUnit.fatigue);
   const aerialRange = result.distance !== undefined && result.rangeDistance !== undefined && result.rangeDistance > result.distance
-    ? ` · 阵距${result.distance}+对空${result.rangeDistance - result.distance}=射程距离${result.rangeDistance}` : '';
-  const cost = `占用编队本轮任务${aerialRange}${fatigue ? ` · ${fatigueUnit.id !== unit.id ? '使用者' : ''}疲劳${approxDelta(fatigue)}` : ''}`;
-  const place = (node: typeof FORMATION_NODES[number]) => `${node.side === 'ally' ? '我方' : '敌方'}${node.wing}${{ front: '前线', rear: '支援', reserve: '预备' }[node.rank]}`;
-  if (result.destination) return `${cost} · 到达${place(result.destination)}${result.layer === 'air' ? '空域' : '地面'}（阶段状态与容量变化可能调整路径）${result.reactions?.length ? ' · 起飞可能遭' + result.reactions.join('、') + '借机' : ''}`;
-  if (result.moraleAfter !== undefined) return `${cost} · 有效士气${displayNumber(result.moraleBefore)}→${displayNumber(result.moraleAfter)}${result.rallyChance !== undefined ? ' · 基础重整成功率' + Math.round(result.rallyChance * 100) + '%' : ' · 惊退风险' + Math.round((result.breakChance ?? 0) * 100) + '%'}`;
-  if (result.healing !== undefined) return `${cost} · 预计恢复${displayNumber(result.healing)}，以目标可恢复生命或伤兵为上限`;
+    ? ui(" · 阵距{distance}+对空{air}=射程距离{range}", { distance: result.distance, air: result.rangeDistance - result.distance, range: result.rangeDistance }) : '';
+  const cost = ui("占用编队本轮任务") + aerialRange + (fatigue ? ui(" · {actor}疲劳{fatigue}", { actor: fatigueUnit.id !== unit.id ? ui('使用者') : '', fatigue: approxDelta(fatigue) }) : '');
+  const place = (node: typeof FORMATION_NODES[number]) => [ui(node.side === 'ally' ? '我方' : '敌方'), ui(node.wing), ui(({ front: '前线', rear: '支援', reserve: '预备' })[node.rank])].join(uiLanguage() === 'en' ? ' · ' : '');
+  if (result.destination) return cost + ui(" · 到达{place}{layer}（阶段状态与容量变化可能调整路径）", { place: place(result.destination), layer: ui(result.layer === 'air' ? '空域' : '地面') }) + (result.reactions?.length ? ui(" · 起飞可能遭{units}借机", { units: result.reactions.join(ui('、')) }) : '');
+  if (result.moraleAfter !== undefined) return cost + ui(" · 有效士气{before}→{after}", { before: displayNumber(result.moraleBefore), after: displayNumber(result.moraleAfter) }) + (result.rallyChance !== undefined ? ui(" · 基础重整成功率{percent}%", { percent: Math.round(result.rallyChance * 100) }) : ui(" · 惊退风险{percent}%", { percent: Math.round((result.breakChance ?? 0) * 100) }));
+  if (result.healing !== undefined) return cost + ui(" · 预计恢复{amount}，以目标可恢复生命或伤兵为上限", { amount: displayNumber(result.healing) });
   const fall = result.fallDamage !== undefined ? ` · ${result.fallChance !== undefined && result.fallChance < 1 ? '迫降概率' + Math.round(result.fallChance * 100) + '%' : '将迫降'}，额外坠落损失至多${displayNumber(result.fallDamage)}${result.forcedLanding ? '，预计落点' + place(result.forcedLanding) : '，已知范围无落点，预计撤出'}` : '';
-  return result.preview ? `${cost}${result.weaponName ? ' · 使用' + result.weaponName : ''}${result.approach && !result.landing ? ' · 冲锋接近至' + place(result.approach) : ''}${result.vehicleMove ? ' · 短移至' + place(result.vehicleMove) + '稳定射击' + (result.reactions?.length ? '，可能遭' + result.reactions.join('、') + '借机' : '') : ''}${result.withdrawal ? ' · 自动后撤至' + place(result.withdrawal) + '射击' : ''}${result.landing ? ' · 先降落至' + place(result.landing) + '扑击' : ''}${result.preview.onHit ? ' · ' + result.preview.onHit : ''}${result.areaTargets?.length ? ' · 波及' + result.areaTargets.join('、') : ''}${result.effects?.length ? ' · ' + result.effects.join('；') : ''}${fall}（阶段行动可能改变结果）` : cost + fall + (result.effects?.length ? ' · ' + result.effects.join('；') : '');
+  return result.preview ? `${cost}${result.weaponName ? ui(" · 使用{weapon}", { weapon: result.weaponName }) : ''}${result.approach && !result.landing ? ui(" · 冲锋接近至{place}", { place: place(result.approach) }) : ''}${result.vehicleMove ? ui(" · 短移至{place}稳定射击", { place: place(result.vehicleMove) }) + (result.reactions?.length ? '，可能遭' + result.reactions.join('、') + '借机' : '') : ''}${result.withdrawal ? ui(" · 自动后撤至{place}射击", { place: place(result.withdrawal) }) : ''}${result.landing ? ui(" · 先降落至{place}扑击", { place: place(result.landing) }) : ''}${result.preview.onHit ? ' · ' + result.preview.onHit : ''}${result.areaTargets?.length ? ui(" · 波及{targets}", { targets: result.areaTargets.join(ui('、')) }) : ''}${result.effects?.length ? ' · ' + result.effects.map(effect => ui(effect)).join(ui('；')) : ''}${fall}${ui("（阶段行动可能改变结果）")}` : cost + fall + (result.effects?.length ? ' · ' + result.effects.map(effect => ui(effect)).join(ui('；')) : '');
 }
 
 function renderMass(): string {
@@ -4105,15 +4104,11 @@ const actions: Record<string, (el: HTMLElement) => void | Promise<void>> = {
   'out-digest': async () => {
     const b = currentBattle();
     const archived = reportForOutput();
-    const english = uiLanguage() === 'en';
-    if (archived && (!b || !english)) { void (await sendToAi(archivedDigest(archived), '回合纪要（整场）', archived.id)); return; }
+    const language = uiLanguage();
+    if (archived && (!b || language === 'zh-CN')) { void (await sendToAi(archivedDigest(archived), '回合纪要（整场）', archived.id)); return; }
     if (!b) throw new Error('没有可输出的战斗');
     // 回合纪要（中等详细）：每回合命中/未中/状态变化/溃退重整——比结算卡省 token
-    const text = roundDigest(b, state.era, reg, {
-      wholeBattle: true,
-      protagonistId: state.protagonistId,
-      formatEvents: english ? englishReportAttack : undefined,
-    });
+    const text = fullRoundReport(b, state.era, state.protagonistId, language);
     if (!text) throw new Error('还没有可纪要的交战事件（先打一回合）');
     void (await sendToAi(text, '回合纪要（整场）', archived?.id));
   },

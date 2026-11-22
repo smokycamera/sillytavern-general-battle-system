@@ -164,8 +164,8 @@ function smallPosition(b: SmallBattle, u: Combatant): string {
   return b.isOver() ? '' : Number.isFinite(distance) ? '(距敌' + bandLabel(distance) + ')' : '(未定位敌军)';
 }
 /** 状态行里的位置：C10·崎岖地·高度1。 */
-export function reportPlaceText(field: BattlefieldSpec, cell: number, unit?: Combatant): string {
-  const place = reportPlace(field, cell, unit);
+export function reportPlaceText(field: BattlefieldSpec, cell: number, unit?: Combatant, text?: import('../display-text.js').DisplayText): string {
+  const place = reportPlace(field, cell, unit, text);
   return [place.cell, ...place.details].join('·');
 }
 /** 战报只写当前姿态：空中、压制、固守、装填。已准备的技能和冷却属于单位资料，不在战况里列出，免得被当成已经使用；战斗结束后只保留空中。 */
@@ -176,11 +176,11 @@ function unitReadiness(b: SmallBattle | MassBattle, u: Combatant): string {
   return info.length ? '｜' + info.join('·') : '';
 }
 /** 环境与地标：状态摘要、逐轮战报与战斗终章共用。 */
-export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? undefined : b.battlefield): string[] {
+export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? undefined : b.battlefield, text?: import('../display-text.js').DisplayText): string[] {
   const lines: string[] = [];
-  if (b.fieldTags.length) lines.push('环境：' + environmentLabel(b.fieldTags));
-  const marks = field ? landmarkSummary(field) : [];
-  if (marks.length) lines.push('地标：' + marks.join('；'));
+  if (b.fieldTags.length) lines.push(text ? text('环境：{environment}', { environment: environmentLabel(b.fieldTags, text) }) : '环境：' + environmentLabel(b.fieldTags));
+  const marks = field ? landmarkSummary(field, text) : [];
+  if (marks.length) lines.push(text ? text('地标：{landmarks}', { landmarks: marks.join('; ') }) : '地标：' + marks.join('；'));
   if (field?.structures && !isMass(b)) {
     const visible = b.isOver() ? undefined : b.visibleCells('ally');
     const operatedGates = new Set(b.log.flatMap(e => e.gate ? [e.gate.cell] : []));
@@ -189,7 +189,7 @@ export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? unde
       if (!s || visible && !visible[cell] && s.owner !== 'ally') return;
       if (s.hp >= s.hpMax && !(s.kind === 'gate' && (s.gateState === 'open' || operatedGates.has(cell)))) return;
       const state = s.hp <= 0 ? '已毁' : s.kind === 'gate' ? (s.gateState === 'open' ? '打开' : '关闭') + (s.hp < s.hpMax ? '、受损' : '') : '受损';
-      const label = `${STRUCTURE_NAMES[s.kind]}${state}`;
+      const label = text ? text(STRUCTURE_NAMES[s.kind]) + ' ' + text(state) : `${STRUCTURE_NAMES[s.kind]}${state}`;
       const group = groups.get(label) ?? { label, cells: [] };
       group.cells.push(cell); groups.set(label, group);
     });
@@ -200,9 +200,9 @@ export function fieldFacts(b: SmallBattle | MassBattle, field = isMass(b) ? unde
         while (cells[i + 1] === cells[i]! + 1 && Math.floor(cells[i + 1]! / field.width) === Math.floor(from / field.width)) i++;
         spans.push(cellLabel(field, from) + (cells[i] !== from ? '–' + cellLabel(field, cells[i]!) : ''));
       }
-      return label + cells.length + '处（' + spans.join('、') + '）';
+      return text ? text('{label}{count}处（{cells}）', { label, count: cells.length, cells: spans.join(', ') }) : label + cells.length + '处（' + spans.join('、') + '）';
     });
-    if (structures.length) lines.push('建筑与城防：' + structures.join('；'));
+    if (structures.length) lines.push(text ? text('建筑与城防：{structures}', { structures: structures.join('; ') }) : '建筑与城防：' + structures.join('；'));
   }
   return lines;
 }
@@ -218,16 +218,19 @@ function battleSituation(b: SmallBattle | MassBattle): string[] {
 }
 
 /** 每个地标一项：名称、至多4个格子、地形与高度范围。旧存档的地标记录可能残缺，无效项略去。 */
-function landmarkSummary(field: BattlefieldSpec): string[] {
+function landmarkSummary(field: BattlefieldSpec, text?: import('../display-text.js').DisplayText): string[] {
   const marks: { label?: unknown; cells?: unknown }[] = field.landmarks?.length ? field.landmarks : field.generation?.landmark ? [field.generation.landmark] : [];
   return marks.flatMap((mark) => {
     const label = safeLandmarkLabel(mark.label);
     const cells = Array.isArray(mark.cells) ? [...new Set(mark.cells.filter((p): p is number => Number.isInteger(p) && p >= 0 && p < field.tiles.length))] : [];
     if (!label || !cells.length) return [];
-    const terrains = [...new Set(cells.filter((p) => field.tiles[p] !== 'open').map((p) => terrainName(field, p)))].slice(0, 2);
+    const terrains = [...new Set(cells.filter((p) => field.tiles[p] !== 'open').map((p) => terrainName(field, p, text)))].slice(0, 2);
     const heights = reportsHeights(field) ? cells.map((p) => displayHeightAt(field, p)) : [];
     const low = Math.min(...heights), high = Math.max(...heights);
-    const details = [...terrains, ...(heights.length ? ['高度' + low + (high > low ? '–' + high : '')] : [])];
+    const span = low + (high > low ? '–' + high : '');
+    const details = [...terrains, ...(heights.length ? [text ? text('高度{height}', { height: span }) : '高度' + span] : [])];
+    if (text) return [label + ' ' + cells.slice(0, 4).map(p => cellLabel(field,p)).join(', ')
+      + (cells.length > 4 ? text('等{count}格', { count: cells.length }) : '') + (details.length ? ' (' + details.join(' · ') + ')' : '')];
     return [label + ' ' + cells.slice(0, 4).map((p) => cellLabel(field, p)).join('、') + (cells.length > 4 ? '等' + cells.length + '格' : '') + (details.length ? '（' + details.join('·') + '）' : '')];
   });
 }
@@ -450,7 +453,9 @@ export function roundDigest(
   b: SmallBattle | MassBattle,
   era?: string,
   _registry?: Map<string, import('../types.js').Trait>,
-  opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string; formatEvents?: (entries: readonly BattleLogEntry[], text: string) => string } = {},
+  opts: { wholeBattle?: boolean; lastRounds?: number; protagonistId?: string;
+    formatEvents?: (entries: readonly BattleLogEntry[], text: string) => string;
+    formatStatus?: (battle: SmallBattle | MassBattle, protagonistId?: string) => string } = {},
 ): string {
   const byRound = new Map<number, BattleLogEntry[]>();
   for (const entry of b.isOver() ? b.log : b.visibleLog('ally')) {
@@ -479,7 +484,8 @@ export function roundDigest(
       ? `【战阵·回合纪要·最近${opts.lastRounds}回合】`
       : '';
   const statusOpts = { protagonistId: opts.protagonistId, includeRecent: false, directives: false };
-  const status = isMass(b) ? massStateSummary(b, era, _registry, statusOpts) : smallStateSummary(b, era, _registry, statusOpts);
+  const status = opts.formatStatus ? opts.formatStatus(b, opts.protagonistId)
+    : isMass(b) ? massStateSummary(b, era, _registry, statusOpts) : smallStateSummary(b, era, _registry, statusOpts);
   return [head, ...lines, status, ...narrativeDirectives()]
     .filter(Boolean)
     .join('\n');

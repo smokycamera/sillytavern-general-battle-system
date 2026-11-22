@@ -54,7 +54,9 @@ async function startRuntime() {
   if (disposed) { host.dispose(); unlock(); return; }
   const worldbooks = createWorldbookSource(() => host.context());
   stopWorldbookSource = () => worldbooks.dispose?.();
-  const disabledChats = new Set(extensionPreferences.read().disabledChats);
+  const initialDisplay = extensionPreferences.read();
+  const disabledChats = new Set(initialDisplay.disabledChats);
+  let promptLanguage = initialDisplay.language ?? 'zh-CN';
   const enabled = () => {
     const scope = host.session()?.scope.key;
     return !!scope && !disabledChats.has(scope);
@@ -87,7 +89,7 @@ async function startRuntime() {
     preview = await importer.preview();
     if (preview.kind === 'empty') return (await importer.adopt(preview, 'import')).status === 'confirmed';
     return false;
-  }, enabled);
+  }, enabled, () => promptLanguage);
   const current = service;
   windowHost.__tavernBattleNative = {
     service: current,
@@ -102,8 +104,10 @@ async function startRuntime() {
     worldbooks,
     setLanguage(language) {
       extensionPreferences.write({ language });
+      promptLanguage = language;
       panel.setLanguage(language);
       applyWorldbook();
+      current.refreshPromptLanguage();
     },
     messages: new NativeMessages(host, () => current.canWrite()),
     open: () => panel.open(),

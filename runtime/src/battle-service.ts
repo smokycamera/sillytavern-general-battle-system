@@ -11,6 +11,8 @@ import { prepareBattleItemWrite } from '../../panel/src/battle-items.js';
 import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stampNewBattleReports } from '../../panel/src/report-history.js';
 import { factsOf, shouldRefreshNarrativeProposal, compactNarrativeSources, prepareNarrativeTransaction, restoreNarrativeDeployment, deleteNarrativeRecords, captureGeneration, namespaceOf, messageSourceKey, proposalFromMessage, narrativeReceiptKey, type NarrativeSave, type NarrativeProposal, type GenerationBinding } from '../../panel/src/narrative-state.js';
 import { narrativeProjection, type InventoryPreview } from '../../panel/src/narrative-controller.js';
+import { ENGLISH_CONTEXT } from '../../panel/src/narrative-prompt.en.js';
+import type { UiLanguage } from '../../panel/src/ui-language.js';
 import { reviewMigration, type MigrationReview } from '../../panel/src/migration-review.js';
 import { parseProtocol, protocolExcerpt } from '../../panel/src/protocol.js';
 import type { PromptSettings } from '../../panel/src/prompt-settings.js';
@@ -64,7 +66,8 @@ export class BattleService {
   private activationEpoch = 0;
   private deferredSetup = false;
   constructor(readonly host: NativeHost, readonly store: NativeStore, private initialize?: () => Promise<boolean>,
-    readonly enabled: () => boolean = () => true) {}
+    readonly enabled: () => boolean = () => true, private readonly promptLanguage: () => UiLanguage = () => 'zh-CN') {}
+  refreshPromptLanguage(): void { this.project(); }
   async activationChanged(): Promise<void> {
     this.activationEpoch++;
     this.binding = undefined; this.bindingMiss = undefined;
@@ -225,9 +228,10 @@ export class BattleService {
     if (!this.enabled() || this.disposed || this.host.hasLegacyRuntime() || !this.inSync() || this.phase === 'loading' || this.phase === 'import' || this.phase === 'handoff' || this.phase === 'error') {
       this.host.clearInjection(PROMPT_ID); this.capabilities.injection = false; return;
     }
-    const text = this.migration ? '【战阵】当前档案需要核对迁移预览；暂不执行正文档案事件。'
+    const language = this.promptLanguage();
+    const text = this.migration ? language === 'en' ? ENGLISH_CONTEXT.migration : '【战阵】当前档案需要核对迁移预览；暂不执行正文档案事件。'
       : narrativeProjection(this.livePanel() ?? this.store.snapshot(['storage', 'inventory', 'rosterIds', 'protagonistId', 'committedOutcomeIds', 'field', 'lighting', 'promptSettings', 'narrativeIdState', 'battle'],
-        ['seed', 'round', 'combatants', 'battlefield', 'attached', 'fieldTags']), this.host.recentPromptText());
+        ['seed', 'round', 'combatants', 'battlefield', 'attached', 'fieldTags']), this.host.recentPromptText(), undefined, 'story', language);
     this.capabilities.injection = this.host.inject(PROMPT_ID, text);
   }
   /** Caller versions are captured before awaiting; queued old intentions cannot follow a chat switch. */

@@ -1,4 +1,5 @@
 import { RUNTIME_REMINDER } from './narrative-prompt.js';
+import { ENGLISH_PROMPT_TEMPLATES } from './narrative-prompt.en.js';
 import { ENGLISH_SETTLEMENT_PROMPT, SETTLEMENT_PROMPT } from '../../engine/src/inject/narrative-task.js';
 import { ui, uiLanguage, type UiLanguage } from './ui-language.js';
 // 旧版默认文本曾可能被设置页原样保存；只替换该精确值，保留真正的自定义编辑。
@@ -24,10 +25,6 @@ function settlementTemplate(settings?: PromptSettings, language: UiLanguage = 'z
   const saved = settings?.sections?.settlement?.template;
   return saved === undefined || oldSettlementTemplate(saved) || saved === SETTLEMENT_PROMPT || saved === ENGLISH_SETTLEMENT_PROMPT
     ? language === 'en' ? ENGLISH_SETTLEMENT_PROMPT : SETTLEMENT_PROMPT : saved;
-}
-function itemsTemplate(settings?: PromptSettings): string {
-  const saved = settings?.sections?.items?.template;
-  return saved === undefined || oldItemsTemplate(saved) ? ITEMS_TEMPLATE : saved;
 }
 export function applySettlementPrompt(text: string, settings?: PromptSettings, language: UiLanguage = 'zh-CN'): string {
   const at = text.indexOf('【叙述任务】');
@@ -80,14 +77,18 @@ export function selectPromptEntries(settings: PromptSettings | undefined, kind: 
 }
 function sectionTemplate(settings: PromptSettings | undefined, id: PromptSectionId, language: UiLanguage = 'zh-CN'): string {
   if (id === 'settlement') return settlementTemplate(settings, language);
-  if (id === 'items') return itemsTemplate(settings);
-  const saved = settings?.sections?.[id]?.template;
-  if (id === 'reminder') return saved?.replace(/count是卡数；(?:会战|本场)最多(?:32|64)张。/g, 'count是卡数。') ?? RUNTIME_REMINDER;
-  return saved ?? PROMPT_SECTIONS.find(section => section.id === id)!.template;
+  const original = PROMPT_SECTIONS.find(section => section.id === id)!.template;
+  const english = id === 'phase' ? original : ENGLISH_PROMPT_TEMPLATES[id];
+  let saved = settings?.sections?.[id]?.template;
+  if (id === 'reminder') saved = saved?.replace(/count是卡数；(?:会战|本场)最多(?:32|64)张。/g, 'count是卡数。');
+  if (saved === undefined || saved === original || saved === english || id === 'items' && oldItemsTemplate(saved)) {
+    return language === 'en' ? english : original;
+  }
+  return saved;
 }
-export function formatPromptSection(settings: PromptSettings | undefined, id: PromptSectionId, content: string): string {
+export function formatPromptSection(settings: PromptSettings | undefined, id: PromptSectionId, content: string, language: UiLanguage = 'zh-CN'): string {
   if (settings?.sections?.[id]?.enabled === false || !content && id !== 'reminder') return '';
-  return sectionTemplate(settings, id).split('{{content}}').join(content);
+  return sectionTemplate(settings, id, language).split('{{content}}').join(content);
 }
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export function renderPromptSettings(settings?: PromptSettings, drafts = new Map<string, string>(), language: UiLanguage = 'zh-CN'): string {

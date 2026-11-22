@@ -16,6 +16,7 @@ import { rangedScreen } from '../guard-screen.js';
 import {validateSceneRecord,type SceneRecord,type DeploymentZone} from './scene-compiler.js';
 import { heightStepCost,validateHeightMap,eyeHeight,unitHeight,groundHeightAt,heightDefense,standingTerrain,surfaceHeightAt,reportsHeights,type HeightTransition } from './height-map.js';
 import { gridWeaponRange } from './weapon-range.js';
+import type { DisplayText } from '../display-text.js';
 
 export const DEFAULT_SMALL_ROUND_LIMIT = 60;
 
@@ -115,22 +116,27 @@ export function structureDisplayName(field: BattlefieldSpec, cell: number): stri
   if ((scene === 'interior' || scene === 'building_siege') && structure.kind === 'gate') return '门';
   return STRUCTURE_NAMES[structure.kind];
 }
-export function terrainName(field: BattlefieldSpec, cell: number): string {
+export function terrainName(field: BattlefieldSpec, cell: number, text?: DisplayText): string {
   const terrain = field.tiles[cell];
   const structure = structureAt(field, cell);
   const indoor = field.generation?.scene === 'interior';
   const floorName = indoor && terrain === 'street' ? '室内地面' : TERRAIN_NAMES[terrain!];
   const structureLabel = structureDisplayName(field, cell);
-  if (structure) return `${floorName}·${structureLabel}${structure.hp > 0 ? ' L' + structure.level + (structure.kind === 'gate' ? structure.gateState === 'open' ? '（开启）' : '（关闭）' : '') : '（已毁）'}`;
-  if (indoor && terrain === 'street') return floorName;
-  if (terrain === 'wall' && field.generation?.version === 4) {
-    if (field.generation.family === 'forest') return '密林障碍';
-    if (field.generation.family === 'mountain') return '岩障';
-    if (field.generation.family === 'plains') return '巨石';
+  if (structure && text) {
+    const state = structure.hp <= 0 ? text('（已毁）')
+      : structure.kind === 'gate' ? text(structure.gateState === 'open' ? '（开启）' : '（关闭）') : '';
+    return text(floorName) + '·' + text(structureLabel) + (structure.hp > 0 ? ' L' + structure.level : '') + state;
   }
-  if (spaceRock(field, cell)) return '小行星';
-  if (terrain === 'open' && field.environment?.includes('cosmos')) return '密封平台';
-  return terrain ? TERRAIN_NAMES[terrain] : '';
+  if (structure) return `${floorName}·${structureLabel}${structure.hp > 0 ? ' L' + structure.level + (structure.kind === 'gate' ? structure.gateState === 'open' ? '（开启）' : '（关闭）' : '') : '（已毁）'}`;
+  if (indoor && terrain === 'street') return text?.(floorName) ?? floorName;
+  if (terrain === 'wall' && field.generation?.version === 4) {
+    if (field.generation.family === 'forest') return text?.('密林障碍') ?? '密林障碍';
+    if (field.generation.family === 'mountain') return text?.('岩障') ?? '岩障';
+    if (field.generation.family === 'plains') return text?.('巨石') ?? '巨石';
+  }
+  if (spaceRock(field, cell)) return text?.('小行星') ?? '小行星';
+  if (terrain === 'open' && field.environment?.includes('cosmos')) return text?.('密封平台') ?? '密封平台';
+  return terrain ? text?.(TERRAIN_NAMES[terrain]) ?? TERRAIN_NAMES[terrain] : '';
 }
 export function terrainCellLabel(field: BattlefieldSpec, cell: number, actor?: Combatant): string {
   const terrain = field.tiles[cell];
@@ -138,13 +144,19 @@ export function terrainCellLabel(field: BattlefieldSpec, cell: number, actor?: C
 }
 /** A place in a report: the cell with its landmark, then terrain details. Maps with relief add the height a unit stands at
  * (or the cell's surface) and name a wall or tower top; the air carries no number, since it keeps its own rules. */
-export function reportPlace(field: BattlefieldSpec, cell: number, unit?: Combatant): { cell: string; details: string[] } {
+export function reportPlace(field: BattlefieldSpec, cell: number, unit?: Combatant, text?: DisplayText): { cell: string; details: string[] } {
   const terrain = field.tiles[cell], airborne = !!unit && isAirborne(unit), relief = reportsHeights(field);
-  const details = terrain && terrain !== 'open' ? [terrainName(field, cell) + (airborne ? '上空' : '')] : airborne && relief ? ['上空'] : [];
+  const details = terrain && terrain !== 'open' ? [
+    airborne && text ? text('{terrain}上空', { terrain: terrainName(field, cell, text) }) : terrainName(field, cell, text) + (airborne ? '上空' : ''),
+  ] : airborne && relief ? [text?.('上空') ?? '上空'] : [];
   if (relief && !airborne) {
     const s = structureAt(field, cell);
-    if (unit && isElevated(unit) && s) details.push(s.kind === 'tower' ? '塔顶' : structureDisplayName(field, cell) === '城墙' ? '城头' : '墙头');
-    details.push('高度' + surfaceHeightAt(field, cell, unit));
+    if (unit && isElevated(unit) && s) {
+      const top = s.kind === 'tower' ? '塔顶' : structureDisplayName(field, cell) === '城墙' ? '城头' : '墙头';
+      details.push(text?.(top) ?? top);
+    }
+    const height = surfaceHeightAt(field, cell, unit);
+    details.push(text ? text('高度{height}', { height }) : '高度' + height);
   }
   return { cell: cellLabel(field, cell) + (landmarkAt(field, cell) ? '〔' + landmarkAt(field, cell) + '〕' : ''), details };
 }

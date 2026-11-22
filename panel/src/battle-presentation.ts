@@ -3,6 +3,7 @@ import { displayNumber } from '../../engine/src/display-number.js';
 import { SmallBattle, cellLabel, gridColumnIndex, FORMATION_NODES, isCommandV2, commandLabel, DEFAULT_COMMAND, COMMAND_STYLE_LABELS, COMMAND_STYLE_DESCRIPTIONS, type Combatant, type BattleLogEntry } from '../../engine/src/index.js';
 import { publicBattleEvents, battleIdOf, type Battle } from './battle-reports.js';
 import { unitIcon, unitIconKey } from './unit-icons.js';
+import { englishEventText } from './report-language.js';
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 /** Format the already-visible event. Historical free text stays readable as written. */
 export function battleLogText(entry: BattleLogEntry, battle: Battle): string {
@@ -15,7 +16,7 @@ export function battleLogText(entry: BattleLogEntry, battle: Battle): string {
     return actor ? actor.name + ' · ' + route : route;
   }
   if (entry.kind === 'round' && /^—— 第 \d+ 回合 ——$/.test(entry.text)) return ui('第{round}轮', { round: entry.round });
-  return entry.text;
+  return englishEventText(entry.text);
 }
 export function actionCaption(entry: BattleLogEntry): string {
   const r=entry.resolution;
@@ -49,7 +50,9 @@ export function commandHeaderHtml(b: Battle): string {
   const sides = b instanceof SmallBattle && b.combatants.some(u => u.side === 'neutral') ? ['ally', 'enemy', 'neutral'] as const : ['ally', 'enemy'] as const;
   return `<div class="sub" data-role="command-header">${sides.map(side => {
     const profile = b.commanderProfiles[side] ?? DEFAULT_COMMAND;
-    return `<span title="${escapeHtml(COMMAND_STYLE_LABELS[profile.style] + '：' + COMMAND_STYLE_DESCRIPTIONS[profile.style])}">${side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方'}指挥：${escapeHtml(commandLabel(profile))}</span>`;
+    const style = ui(COMMAND_STYLE_LABELS[profile.style]);
+    const label = uiLanguage() === 'en' ? commandLabel(profile).split('·').map(part => ui(part)).join(' · ') : commandLabel(profile);
+    return `<span title="${escapeHtml(style + '：' + ui(COMMAND_STYLE_DESCRIPTIONS[profile.style]))}">${ui('{side}指挥：{profile}', { side: ui(side === 'ally' ? '我方' : side === 'neutral' ? '第三方' : '敌方'), profile: escapeHtml(label) })}</span>`;
   }).join('｜')}</div>`;
 }
 export function renderBattleHighlights(b: Battle): string {

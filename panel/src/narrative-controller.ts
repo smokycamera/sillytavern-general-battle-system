@@ -1,4 +1,7 @@
 import { readMigrationBackup } from './migration-backup.js';
+import { ENGLISH_CONTEXT } from './narrative-prompt.en.js';
+import { displayTextFor, uiLanguage, type UiLanguage } from './ui-language.js';
+import { formatDisplayText } from '../../engine/src/display-text.js';
 import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { batchWeapons } from '../../engine/src/equipment-batches.js';
 import { migrateOutOfBattleLoads } from './load-migration.js';
@@ -38,17 +41,26 @@ const promptJson = (value: unknown, publicId: (id: string) => string = id => id)
 // Only an explicit request to change a record exposes its editable fields; story wording such as 调整阵型 does not.
 const EDIT_REQUEST = /unit_set|(?:修改|调整|更改|改动)[^\s，。！？、；：,.!?;:]{0,6}(?:属性|数值|档案|面板|数据)|(?:属性|数值|档案|面板|数据)[^\s，。！？、；：,.!?;:]{0,4}(?:修改|调整|更改)/;
 
-function equipmentFact(value: Combatant['weapon'] | Combatant['armor'] | Combatant['shield']): string | undefined {
+function equipmentFact(value: Combatant['weapon'] | Combatant['armor'] | Combatant['shield'], language: UiLanguage): string | undefined {
   if (!value) return undefined;
   const mechanism = value.recipe?.mechanism, quality = instanceQuality(value.recipe?.variance);
   const label = mechanism && (WEAPON_CLASSES[mechanism]?.name ?? SHIELD_CLASSES[mechanism as ShieldClass]?.name);
   // §1.4/§5 叙事事实：装备带类别名，品相不是普通时也带上，如“RPG-7（火箭筒）”“长剑（剑，优良）”。
   const notes = [label, quality === '普通' ? undefined : quality].filter(Boolean);
-  return (value.name ?? '盾牌') + (notes.length ? '（' + notes.join('，') + '）' : '');
+  const text = displayTextFor(language);
+  const name = value.name ?? text('盾牌');
+  if (language === 'en') return name + (notes.length ? ' (' + notes.map(note => text(note!)).join(', ') + ')' : '');
+  return name + (notes.length ? '（' + notes.join('，') + '）' : '');
 }
 const PROMPT_ID = 'tavern-battle:context';
-export function narrativeProjection(save: NarrativeSave, requestText = '', details?: ProjectionDetails, audience: 'story' | 'scan' = 'story'): string {
+export function narrativeProjection(
+  save: NarrativeSave, requestText = '', details?: ProjectionDetails, audience: 'story' | 'scan' = 'story',
+  language: UiLanguage = 'zh-CN',
+): string {
   const detailed = audience === 'scan';
+  if (detailed) language = 'zh-CN';
+  const english = language === 'en';
+  const text = displayTextFor(language);
   const settings = save.promptSettings;
   const blocks: Record<PromptSectionId, string[]> = { settlement: [], facts: [], units: [], mission: [], items: [], phase: [], reminder: [] };
   const lines = blocks.facts;
@@ -77,24 +89,37 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
   const records = allRecords.filter((r) => promptSelected(settings, 'unit', r.id)
     && unitInPromptScope(settings, r.id, roster.has(r.id), relevant(r))
     && (!battleOpen || combatants.some((u) => u.id === r.id) || relevant(r) || settings?.pinnedUnitIds?.includes(r.id))).sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || Number(roster.has(b.id)) - Number(roster.has(a.id)) || (b.revision ?? 1) - (a.revision ?? 1));
-  lines.push(`本场${limited ? '已知' : ''}参战${allRecords.filter((r) => roster.has(r.id)).length}张单位卡；编队人数另计。`);
-  lines.push(`环境：${battleOpen ? (save.battle?.snap.fieldTags as string[] | undefined)?.join('/') ?? 'plains' : (save.field || 'plains') + (save.lighting === 'night' && save.field !== 'night' ? '/night' : '')}；本场场景以存档记录为准。`);
-  if (battleOpen && field) {
-    const goal = field.objective;
-    const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
-    blocks.mission.push(`当前地图${field.width}×${field.height}${goal.kind === 'annihilation' ? '' : '，任务格' + cellLabel(field, goal.cell)}，第${save.battle?.snap.round ?? 1}/${goal.limit}轮；移动/位置以引擎为准。`);
-    blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
-      : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '任务逾期僵持'}。`);
+  const cardCount = allRecords.filter(r => roster.has(r.id)).length;
+  const environment = battleOpen
+    ? (save.battle?.snap.fieldTags as string[] | undefined)?.join('/') ?? 'plains'
+    : (save.field || 'plains') + (save.lighting === 'night' && save.field !== 'night' ? '/night' : '');
+  if (english) {
+    lines.push(formatDisplayText(limited ? ENGLISH_CONTEXT.knownCardCount : ENGLISH_CONTEXT.cardCount, { count: cardCount }));
+    lines.push(formatDisplayText(ENGLISH_CONTEXT.environment, { environment }));
+    if (battleOpen && field) {
+      blocks.mission.push(...englishObjectives(field, combatants, visible, save.battle!.snap, publicId));
+    }
+    if (limited) blocks.mission.push(ENGLISH_CONTEXT.visibility);
+  } else {
+    lines.push(`本场${limited ? '已知' : ''}参战${cardCount}张单位卡；编队人数另计。`);
+    lines.push(`环境：${environment}；本场场景以存档记录为准。`);
+    if (battleOpen && field) {
+      const goal = field.objective;
+      const owner = goal.kind === 'escape' ? combatants.find((u) => u.id === goal.unitId)?.side : undefined;
+      blocks.mission.push(`当前地图${field.width}×${field.height}${goal.kind === 'annihilation' ? '' : '，任务格' + cellLabel(field, goal.cell)}，第${save.battle?.snap.round ?? 1}/${goal.limit}轮；移动/位置以引擎为准。`);
+      blocks.mission.push(goal.kind === 'annihilation' ? '任务：歼灭战，使敌方全部失去作战能力获胜，无占点胜利。' : goal.kind === 'control' ? `任务：${goal.attackingSide ? (goal.attackingSide === 'ally' ? '我方进攻、敌方防守' : '我方防守、敌方进攻') + '；仅攻方可占点获胜，守方坚持至期限获胜' : '双方争夺'}，占领当轮不计，连续控制${goal.rounds}个完整回合可胜；当前进展${promptJson(save.battle?.snap.controlRounds ?? {})}。`
+        : `任务：${owner === 'enemy' ? '我方拦截敌方护送' : '我方护送、敌方拦截'}；对象${visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : '尚未观测'}，地面抵达则护送方胜；${goal.defenderWins ? '消灭、撤离或逾期则拦截方胜' : '任务逾期僵持'}。`);
+    }
+    if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   }
-  if (limited) blocks.mission.push('仅列我方与当前已观测敌军；未列出的敌军位置、兵力与行动未知，不补写隐藏战斗记录。');
   for (const record of records) {
     const live = combatants.find((c) => c.id === record.id);
     const unit = live ?? record.snapshot;
     const progress = xpProgress({ level: record.level, xp: record.xp ?? 0, xpCurve: unit?.xpCurve, xpLevelStart: unit?.xpLevelStart });
     const moraleLocked = record.scale === 'hero' || record.id === save.protagonistId || unit?.moraleLocked === true;
-    const liveMorale = !moraleLocked && live?.rulesVersion === 'v2' ? moraleLabel(visibleObservation, live) : '';
+    const liveMorale = !moraleLocked && live?.rulesVersion === 'v2' ? moraleLabel(visibleObservation, live, undefined, 25, text) : '';
     const currentMorale = battleOpen ? (detailed ? undefined : live?.morale) : record.morale;
-    const morale = moraleLocked ? '该单位士气锁定，请勿在tb修改' : liveMorale || currentMorale;
+    const morale = moraleLocked ? (english ? ENGLISH_CONTEXT.moraleLocked : '该单位士气锁定，请勿在tb修改') : liveMorale || currentMorale;
     const moraleMax = !detailed && !moraleLocked && morale !== undefined ? (live?.base ?? record.base).moraleMax : undefined;
     const physical = live && positionedUnit(observation, live);
     const effects = unit?.traitSources?.filter((s) => traitSourceActive(unit, s) && (detailed || s.conditions === undefined)).map((s) => ({ source: s.id, name: s.name,
@@ -102,24 +127,33 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       ...(s.conditionIds?.length ? { effects: s.conditionIds.map((id) => standardConditionMap().get(id)?.name ?? id) } : {}),
       duration: s.duration.kind, remaining: s.remaining }));
     const traitEffects = detailed && unit ? activeTraitIds(unit).filter(id => gradedTraitEnabled(unit, id)).map(id => ({ trait: id, level: traitLevel(unit, id), effect: traitLadderSummary(id, traitLevel(unit, id), id === 'medic' ? unit.traitLevelModel : undefined, unit.flightModel, individualCasualties && !isVehicleBody(unit.body)), sources: traitLevelSources(unit, id), inactive: traitPrerequisiteReason(unit, id) })) : [];
+    const recovery = woundedLabel(live ?? record, false, text);
+    const state: Combatant['status'] = live?.status ?? record.status ?? 'ready';
+    const statusLabel = record.retired ? text('已解散，不可选择')
+      : english && state === 'dying' ? ENGLISH_CONTEXT.incapacitated
+      : text(({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡',
+          routing: '溃退中，尚未离场', fled: '已撤离战场' })[state]);
+    const conditionLabel = (id: string, duration: number) => text('{condition}{count}轮', {
+      condition: text(standardConditionMap().get(id)?.name ?? id), count: duration,
+    });
     const line = promptJson({ ...(detailed && traitEffects.length ? { traitEffects } : {}), id: record.id, name: record.name, side: record.side,
       ...(detailed ? { training: record.level, bonuses: unit?.bonuses } : { level: String(record.level) + enhancementLabel(unit?.bonuses) }),
       ...(!battleOpen ? { ...(detailed ? { level:record.level,base:{...record.base,...(moraleLocked?{moraleMax:undefined}:{})},status:record.status,retired:record.retired,resources:unit?.resources,traits:unit?.traits.map((id) => traitLevelToken(id, unit.traitLevels?.[id])),preparedAbilityIds:unit?.preparedAbilityIds } : {}),speedTier:unit?.speedTier,
-        conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0 && !c.effectSourceId).map(c => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
-      ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: '已满级' }),
-      semantics: record.scale === 'hero' ? '生命' : isVehicleBody(unit?.body)?'载具数量':'人数', hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
+        conditions:detailed ? record.conditions : record.conditions?.filter(c => c.dur > 0 && !c.effectSourceId).map(c => conditionLabel(c.id, c.dur)) } : {}),
+      ...(progress ? { xpProgress: progress.current, xpRequired: progress.next } : { xpProgress: text('已满级') }),
+      semantics: text(record.scale === 'hero' ? '生命' : isVehicleBody(unit?.body) ? '载具数量' : '人数'), hp: live?.hp ?? record.hp, hpMax: live?.base.hpMax ?? record.base.hpMax,
       // Wound groups are engine bookkeeping: the chat model gets a readable summary, never raw {hp,count} records to echo or rewrite.
       ...(unit&&hasMemberHealth(unit)?{memberHpMax:unit.formation!.memberHp,totalLife:memberHealth(unit),totalLifeMax:memberHealthMax(unit),memberHealth:memberHealthSummary(unit,4)}:{}),
       morale, moraleMax, ...(moraleLocked ? { moraleLocked: true } : {}),
-      ...(woundedLabel(live ?? record) ? { recovery: woundedLabel(live ?? record) } : {}),
-      state: record.retired ? '已解散，不可选择' : ({ ready: '可行动', dying: '倒地失去战斗力（尚未死亡，不代表持续濒死；恢复以最新生命和状态为准）', dead: '死亡', routing: '溃退中，尚未离场', fled: '已撤离战场' }[live?.status ?? record.status ?? 'ready']),
-      ...(physical?.airborne !== undefined ? { layer: isAirborne(physical) ? '空中' : '地面' } : {}),
+      ...(recovery ? { recovery } : {}),
+      state: statusLabel,
+      ...(physical?.airborne !== undefined ? { layer: text(isAirborne(physical) ? '空中' : '地面') } : {}),
       ...(live && concealmentLabel(observation, live) ? { concealment: concealmentLabel(observation, live) } : {}),
       ...(unit?.tacticalPose ? { posture: postureLabel(unit, standardConditionMap()) } : {}),
       ...(live && worksLabel(live) ? { works: worksLabel(live) } : {}),
       ...(live && observation.mode === 'mass' && live.rulesVersion === 'v2' ? { formation: (formationNode(physical ?? live).side === 'ally' ? '我方阵地/' : '敌方阵地/') + formationNode(physical ?? live).wing + '/' + ({ front: '前线', rear: '支援', reserve: '预备' }[formationNode(live).rank]) } : {}),
       ...(field && live?.pos !== undefined ? { position: cellLabel(field, live.pos), suppressed: !!live.suppression } : {}),
-      ...(live?.conditions.some((c) => c.dur > 0 && !c.effectSourceId) ? { conditions: live.conditions.filter((c) => c.dur > 0 && !c.effectSourceId).map((c) => (standardConditionMap().get(c.id)?.name ?? c.id) + c.dur + '轮') } : {}),
+      ...(live?.conditions.some((c) => c.dur > 0 && !c.effectSourceId) ? { conditions: live.conditions.filter((c) => c.dur > 0 && !c.effectSourceId).map(c => conditionLabel(c.id, c.dur)) } : {}),
       ...(live?.side === 'ally' ? { SP: `${live.resources.SP ?? 0}/${spCapacity(live)}` } : {}),
       skills: detailed && unit?.rulesVersion === 'v2' && unit.abilities.length ? unit.abilities.filter((a) => !a.itemSourceId && !a.equipmentSourceId && (!battleOpen || /学习|技能|learn/.test(requestText) || unit.preparedAbilityIds?.includes(a.id))).map((a) => battleOpen && !/学习|技能|learn/.test(requestText)
         ? { name: a.name, cooldown: unit.abilityState.find((s) => s.abilityId === (a.cooldownGroup ?? a.id))?.cdLeft || undefined }
@@ -128,7 +162,7 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       body: unit?.rulesVersion === 'v2' && unit.body !== 'human' ? unit.body : undefined, platform: unit?.platform && platformText(unit.platform), seats: unit?.platform ? unit.seats ?? 1 : undefined,
       mount: unit?.ride?.mode === 'mount' ? publicId(unit.ride.platformId) : unit?.mount || undefined,
       aboard: unit?.ride?.mode === 'aboard' ? publicId(unit.ride.platformId) : undefined,
-      weapon: unit && batchWeapons(unit).map(w=>equipmentFact(w)).join('、') || undefined, armor: equipmentFact(unit?.armor), shield: equipmentFact(unit?.shield), ...(effects?.length ? { effects } : {}) }, publicId);
+      weapon: unit && batchWeapons(unit).map(w => equipmentFact(w, language)).join(text('、')) || undefined, armor: equipmentFact(unit?.armor, language), shield: equipmentFact(unit?.shield, language), ...(effects?.length ? { effects } : {}) }, publicId);
     blocks.units.push(line);
     if (!detailed && unit?.rulesVersion === 'v2') {
       for (const source of unit.traitSources ?? []) if (source.conditions !== undefined && traitSourceActive(unit, source)) {
@@ -159,9 +193,9 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
       const key = m?.kind === 'weapon' ? 'weapon' : m?.kind === 'armor' ? 'armor' : m?.kind === 'shield' ? 'shield' : 'items';
       const quality = m && m.kind !== 'item' ? instanceQuality(m.value.recipe?.variance) : undefined;
       const enchant = m && m.kind !== 'item' ? m.value.recipe?.enchantment : undefined;
-      const note = [item.note, quality && quality !== '普通' ? quality : undefined, enchant ? enchant === 'thermal' ? '热能转化' : '奥术转化' : undefined].filter(Boolean).join('；') || undefined;
+      const note = [item.note, quality && quality !== '普通' ? text(quality) : undefined, enchant ? text(enchant === 'thermal' ? '热能转化' : '奥术转化') : undefined].filter(Boolean).join(text('；')) || undefined;
       blocks.items.push(storyFields({ id: item.id, owner: item.assignedTo,
-        kind: m?.kind === 'item' ? ITEM_FORM_NAMES[m.value.recipe.form] + '道具' : undefined,
+        kind: m?.kind === 'item' ? text('{form}道具', { form: text(ITEM_FORM_NAMES[m.value.recipe.form]) }) : undefined,
         [key]: (m?.kind === 'item' ? storyItemSpec(item) : m ? storyEquipmentSpec(item) : item.name) + quantity,
         equipped: item.assignedTo && !item.equippedTo && m && (m.kind !== 'item' || m.value.recipe.form !== 'single') ? false : undefined, note }, publicId));
     } else {
@@ -169,22 +203,44 @@ export function narrativeProjection(save: NarrativeSave, requestText = '', detai
     if (m?.kind === 'item') blocks.items.push(promptJson({ id: item.id, name: item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: ITEM_FORM_NAMES[m.value.recipe.form] + '道具', spec: itemSpecText(m.value.recipe), charges: m.value.ability?.usesPerBattle, note: item.note }, publicId));
     else { const recipe = m?.value.recipe;
-    blocks.items.push(promptJson({ id: item.id, name: m ? equipmentFact(m.value) : item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
+    blocks.items.push(promptJson({ id: item.id, name: m ? equipmentFact(m.value, language) : item.name, qty: item.qty, owner: item.assignedTo, slot: item.equippedTo?.slot,
       kind: m?.kind ?? item.lootType, mechanism: recipe?.mechanism, power: recipe?.power, bonuses:recipe?.bonuses, enchant: recipe?.enchantment,
       quality: recipe?.quality, ...(detailed ? { body: recipe?.size, stabilized: recipe?.stabilized, protection: recipe?.protectionProfile } : {}), note: item.note }, publicId)); }
     }
     details?.items.push({id: item.id, name: item.name, reason: item.assignedTo && roster.has(item.assignedTo) ? '参战队伍携行' : relevant(item) ? '正文提及' : '手动勾选'});
   }
-  blocks.phase.push(battleOpen ? '当前战斗/战果待提交，正文不能更新档案。' : '当前可进行战外档案事件。');
-  const output = PROMPT_SECTIONS.filter((section) => section.id !== 'settlement').map((section) => formatPromptSection(settings, section.id, blocks[section.id].join('\n'))).filter(Boolean).join('\n');
+  blocks.phase.push(english ? (battleOpen ? ENGLISH_CONTEXT.phaseActive : ENGLISH_CONTEXT.phaseIdle)
+    : (battleOpen ? '当前战斗/战果待提交，正文不能更新档案。' : '当前可进行战外档案事件。'));
+  const output = PROMPT_SECTIONS.filter((section) => section.id !== 'settlement').map((section) => formatPromptSection(settings, section.id, blocks[section.id].join('\n'), language)).filter(Boolean).join('\n');
   if (details) {
     details.chars = output.length;
     for (const id of ['units', 'items'] as const) if (settings?.sections?.[id]?.enabled === false || !(settings?.sections?.[id]?.template ?? '{{content}}').includes('{{content}}')) details[id] = [];
   }
   return output;
 }
-export function narrativeProjectionDetails(save: NarrativeSave, requestText = ''): ProjectionDetails {
-  const details: ProjectionDetails = {chars:0,units:[],items:[]}; narrativeProjection(save, requestText, details); return details;
+export function narrativeProjectionDetails(save: NarrativeSave, requestText = '', language: UiLanguage = 'zh-CN'): ProjectionDetails {
+  const details: ProjectionDetails = { chars: 0, units: [], items: [] };
+  narrativeProjection(save, requestText, details, 'story', language);
+  return details;
+}
+
+function englishObjectives(field: BattlefieldSpec, combatants: readonly Combatant[], visible: ReadonlySet<string>,
+  snapshot: NonNullable<NarrativeSave['battle']>['snap'], publicId: (id: string) => string): string[] {
+  const goal = field.objective;
+  const map = formatDisplayText(goal.kind === 'annihilation' ? ENGLISH_CONTEXT.map : ENGLISH_CONTEXT.mapWithObjective, {
+    width: field.width, height: field.height, cell: cellLabel(field, goal.cell), round: Number(snapshot.round ?? 1), limit: goal.limit,
+  });
+  if (goal.kind === 'annihilation') return [map, ENGLISH_CONTEXT.annihilation];
+  if (goal.kind === 'control') {
+    const capture = goal.attackingSide === 'ally' ? ENGLISH_CONTEXT.alliedCapture
+      : goal.attackingSide === 'enemy' ? ENGLISH_CONTEXT.enemyCapture : ENGLISH_CONTEXT.contestedCapture;
+    return [map, formatDisplayText(capture, { rounds: goal.rounds, progress: promptJson(snapshot.controlRounds ?? {}) })];
+  }
+  const escort = combatants.find(u => u.id === goal.unitId)?.side === 'enemy' ? ENGLISH_CONTEXT.enemyEscort : ENGLISH_CONTEXT.alliedEscort;
+  return [map, formatDisplayText(escort, {
+    target: visible.has(goal.unitId) ? promptJson(publicId(goal.unitId)) : ENGLISH_CONTEXT.unobserved,
+    result: goal.defenderWins ? ENGLISH_CONTEXT.interceptorVictory : ENGLISH_CONTEXT.stalemate,
+  })];
 }
 
 /** 不同宿主可能发送数字、数字字符串或消息对象。 */
@@ -296,7 +352,13 @@ export class NarrativeController {
   }
   listen(callback: Listener): () => void { this.listeners.add(callback); return () => this.listeners.delete(callback); }
   private notify(): void { for (const listener of this.listeners) listener(this.snapshot(), this.lastReceipt); }
-  private project(): void { this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content: this.migration ? '【战阵】存档正等待玩家核对迁移预览；暂不执行正文档案事件。' : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '') }]); }
+  private project(): void {
+    const language = uiLanguage();
+    const content = this.migration
+      ? language === 'en' ? ENGLISH_CONTEXT.migration : '【战阵】存档正等待玩家核对迁移预览；暂不执行正文档案事件。'
+      : narrativeProjection(this.state, this.adapter.recentPromptText?.() ?? '', undefined, 'story', language);
+    this.capabilities.injection = this.adapter.injectPrompts([{ id: PROMPT_ID, content }]);
+  }
   private switchContext(): void {
     this.memoryBattle = false;
     this.epoch++; this.binding = undefined; this.generation = undefined;

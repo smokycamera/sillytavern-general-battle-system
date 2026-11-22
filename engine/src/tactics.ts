@@ -1,3 +1,4 @@
+import type { DisplayText } from './display-text.js';
 import { isVehicleBody } from './vehicle-size.js';
 import { equipmentStep, gradedNumbers } from './numeric-model.js';
 import { loadMovementScale } from './equipment-load.js';
@@ -24,8 +25,10 @@ export interface TacticalPose {
   anchor: { x: number; y: number }; facing: { x: number; y: number };
 }
 export const SPEED_TIERS = ['迟缓', '缓行', '标准', '快速', '疾速'] as const;
-export function movementLabel(unit: Combatant, tags: string[] = []): string {
-  const points = movementPoints(unit, tags); return SPEED_TIERS[Math.max(0, Math.min(4, Math.floor(points) - 1))] + '·' + displayNumber(points) + '格';
+export function movementLabel(unit: Combatant, tags: string[] = [], text?: DisplayText): string {
+  const points = movementPoints(unit, tags);
+  const tier = SPEED_TIERS[Math.max(0, Math.min(4, Math.floor(points) - 1))]!;
+  return text ? text('{speed}·{points}格', { speed: text(tier), points: displayNumber(points) }) : tier + '·' + displayNumber(points) + '格';
 }
 /** 训练先攻与地图移动分开；移动只读实际体量、负载、专长、状态和疲劳。 */
 export function movementPoints(unit: Combatant, tags: string[] = []): number {

@@ -5,11 +5,16 @@ import { isCohort, personnel, COHORT_REFERENCE } from './combat-model.js';
 import { standingTerrain } from './small/height-map.js';
 import { activeTraitIds } from './trait-sources.js';
 import { TARGET_WIDTH_MODEL, targetWidthLimit } from './target-width.js';
+import type { DisplayText } from './display-text.js';
 
 export const LEGACY_ENGAGEMENT_WIDTH = { ranged: 10, melee: 8, difficultPenalty: 2 } as const;
 export const ENGAGEMENT_WIDTH = { ranged: 20, melee: 16, difficultPenalty: 4 } as const;
-export function difficultEngagementDescription(model: Combatant['damageModel'] = 'wounds-v2'): string {
+export function difficultEngagementDescription(model: Combatant['damageModel'] = 'wounds-v2', text?: DisplayText): string {
   const width = model === 'wounds-v2' ? ENGAGEMENT_WIDTH : LEGACY_ENGAGEMENT_WIDTH;
+  if (text) return text('武器交战展开减少{loss}人（远程{ranged}→{rangedAfter}，近战{melee}→{meleeAfter}）', {
+    loss: width.difficultPenalty, ranged: width.ranged, rangedAfter: width.ranged - width.difficultPenalty,
+    melee: width.melee, meleeAfter: width.melee - width.difficultPenalty,
+  });
   return `武器交战展开减少${width.difficultPenalty}人（远程${width.ranged}→${width.ranged - width.difficultPenalty}，近战${width.melee}→${width.melee - width.difficultPenalty}）`;
 }
 

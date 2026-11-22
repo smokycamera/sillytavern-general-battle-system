@@ -1,20 +1,22 @@
 import { readReportStart } from './report-start-archive.js';
 import { displayNumber } from '../../engine/src/display-number.js';
-import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel, energyShieldCapacity } from '../../engine/src/index.js';
+import { SmallBattle, type MassBattle, type BattleLogEntry, type Combatant, woundedLabel, energyShieldCapacity, isAirborne } from '../../engine/src/index.js';
 import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { observedLog } from '../../engine/src/observation.js';
 import { smallBattleResult } from '../../engine/src/battle-result.js';
-import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel } from '../../engine/src/inject/format.js';
+import { compactEventGroups, fieldFacts, reportPlaceText, reportStrengthLabel, reportShieldLabel, roundDigest } from '../../engine/src/inject/format.js';
 import { formationNode } from '../../engine/src/mass/formation.js';
-import type { BattlefieldSpec } from '../../engine/src/small/spatial.js';
+import { cellLabel, type BattlefieldSpec } from '../../engine/src/small/spatial.js';
 import { NARRATIVE_TASK } from '../../engine/src/inject/narrative-task.js';
 import type { DeliveryReceipt } from './tavern.js';
 import {memberNoun} from '../../engine/src/member-health.js';
 import { itemUseReport } from './item-use-report.js';
 import { applySettlementPrompt, type PromptSettings } from './prompt-settings.js';
 import { isCommunicationLog } from '../../engine/src/diplomacy.js';
-import type { UiLanguage } from './ui-language.js';
-import { englishReportAttack, englishReportHeadings } from './report-language.js';
+import { displayTextFor, type UiLanguage } from './ui-language.js';
+import { englishEventText, englishReportDocument, englishReportEvents } from './report-language.js';
+
+const english = displayTextFor('en');
 
 export type Battle = SmallBattle | MassBattle;
 export interface NarrativeEvent { index: number; round: number; text: string }
@@ -39,7 +41,7 @@ function omitArchivedClimbCost(text: string): string {
 }
 export function reportForDelivery(text: string, settings?: PromptSettings, language: UiLanguage = 'zh-CN'): string {
   const report = omitArchivedClimbCost(text).replace(/^((?:▸ )?[［【\[])(?:总协同攻击|协同(?:攻击|近战|远程|射击))[·：:]\s*/gm, '$1');
-  return applySettlementPrompt(language === 'en' ? englishReportHeadings(report) : report, settings, language);
+  return applySettlementPrompt(language === 'en' ? englishReportDocument(report) : report, settings, language);
 }
 export function reportNarrationInstructions(language: UiLanguage, epilogue: boolean): string {
   const english = language === 'en';
@@ -50,6 +52,16 @@ export function reportNarrationInstructions(language: UiLanguage, epilogue: bool
   return (epilogue ? [describe, items, equipment] : [describe, equipment]).join('\n');
 }
 export const archivedDigest = (report: BattleReport): string => omitArchivedClimbCost(withCommunications(report.digest || report.card, report.narrativeEvents ?? []));
+
+export function fullRoundReport(b: Battle, era?: string, protagonistId?: string, language: UiLanguage = 'zh-CN'): string {
+  const options = { wholeBattle: true, protagonistId };
+  if (language === 'zh-CN') return roundDigest(b, era, undefined, options);
+  const field = b instanceof SmallBattle ? b.battlefield : undefined;
+  return roundDigest(b, era, undefined, { ...options,
+    formatEvents: (entries, fallback) => englishReportEvents(entries, fallback, field),
+    formatStatus: englishBattleStatus,
+  });
+}
 export interface NarrativeBatch { battleId: string; key: string; kind: 'delta' | 'epilogue'; from: number; to: number; text: string }
 export interface BattleDelivery { cursor: number; receipts: Record<string, DeliveryReceipt & { from: number; to: number; kind: NarrativeBatch['kind'] }> }
 export type BattleDeliveries = Record<string, BattleDelivery>;
@@ -75,8 +87,9 @@ export function publicBattleEvents(b: Battle): { index: number; entry: BattleLog
 export function narrativeEvents(b: Battle, from = 0, to = b.log.length, language: UiLanguage = 'zh-CN'): NarrativeEvent[] {
   const picked = publicBattleEvents(b).filter(({index,entry}) => index >= from && index < to && !['initiative','round'].includes(entry.kind) && !/^布阵/.test(entry.text));
   const entries = picked.map(p => p.entry);
+  const field = b instanceof SmallBattle ? b.battlefield : undefined;
   return compactEventGroups(entries, { unresolvedAttacks: true }).map(group => ({ index: picked[group.first]!.index,
-    round: entries[group.first]!.round, text: language === 'en' ? englishReportAttack(entries.slice(group.first, group.last + 1), group.text) : group.text }));
+    round: entries[group.first]!.round, text: language === 'en' ? englishReportEvents(entries.slice(group.first, group.last + 1), group.text, field) : group.text }));
 }
 /** 归档时按已发送的游标分两段合并，之后从归档补发的增量不重复已经发出的移动。 */
 export function archivedNarrativeEvents(b: Battle, deliveries: BattleDeliveries): NarrativeEvent[] {
@@ -88,16 +101,20 @@ export function knownBattleUnits(b: Battle): Combatant[] {
   return b instanceof SmallBattle ? b.rosterInView('ally') : b.visibleCombatants('ally');
 }
 export function knownBattleState(b: Battle, language: UiLanguage = 'zh-CN'): string {
+  if (language === 'en') return englishBattleStatus(b, undefined, knownBattleUnits(b));
   const field = b instanceof SmallBattle ? b.battlefield : undefined;
   return ['【最新状态】', ...(b instanceof SmallBattle && b.isOver() ? [smallBattleResult(b)!] : []), ...knownBattleUnits(b).map(u=>epilogueUnit(b,u,field,language)), ...fieldFacts(b)].join('\n');
 }
 const RANK_NAMES = { front: '前列', rear: '后列', reserve: '预备列' } as const;
 /** 小战写格子、地形与高度，会战写阵位；撤离的单位和没有位置的旧记录不写。 */
-function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec): string {
+function unitPlace(b: Battle, u: Combatant, field?: BattlefieldSpec, language: UiLanguage = 'zh-CN'): string {
   if (u.status === 'fled') return '';
-  if (b instanceof SmallBattle) return field && Number.isInteger(u.pos) && u.pos! >= 0 && u.pos! < field.tiles.length ? '(' + reportPlaceText(field, u.pos!, u) + ')' : '';
+  if (b instanceof SmallBattle) return field && Number.isInteger(u.pos) && u.pos! >= 0 && u.pos! < field.tiles.length ? '(' + reportPlaceText(field, u.pos!, u, language === 'en' ? english : undefined) + ')' : '';
   if (u.rulesVersion !== 'v2') return '';
-  try { const node = formationNode(b.effectiveUnit(u)); return '(' + node.wing + RANK_NAMES[node.rank] + ')'; } catch { return ''; }
+  try {
+    const node = formationNode(b.effectiveUnit(u));
+    return language === 'en' ? '(' + english(node.wing) + ' · ' + english(RANK_NAMES[node.rank]) + ')' : '(' + node.wing + RANK_NAMES[node.rank] + ')';
+  } catch { return ''; }
 }
 function epilogueUnit(b: Battle, u: Combatant, field: BattlefieldSpec | undefined, language: UiLanguage): string {
   if (language === 'en') {
@@ -107,11 +124,40 @@ function epilogueUnit(b: Battle, u: Combatant, field: BattlefieldSpec | undefine
     const shield = u.energyShield && u.hp > 0 && u.status !== 'dead' && u.status !== 'fled' ? `Energy shield ${Math.round(u.energyShield.remaining)}/${displayNumber(energyShieldCapacity(u))}${u.energyShield.overloaded ? ` (${u.energyShield.overloaded} overloaded)` : ''}` : '';
     const wounded = u.recoverableWounded ? `${u.recoverableWounded} recoverable wounded` : '';
     const conditions = [...new Set(u.conditions.filter(c => c.dur > 0).map(c => /^[a-z-]+$/.test(c.id) ? c.id.replaceAll('-', ' ') : b.conditions.get(c.id)?.name ?? c.id))];
-    return `${side} ${u.name}${unitPlace(b,u,field)}: ${[strength, status, shield, wounded, ...conditions].filter(Boolean).join(', ')}`;
+    return `${side} ${u.name}${unitPlace(b,u,field,language)}: ${[strength, status, shield, wounded, ...conditions].filter(Boolean).join(', ')}`;
   }
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=[...new Set(u.conditions.filter(c=>c.dur>0).map(c=>b.conditions.get(c.id)?.name??c.id))];
   return `${u.side==='ally'?'我方':u.side==='enemy'?'敌方':'第三方'} ${u.name}${unitPlace(b,u,field)}：${reportStrengthLabel(u)}${reportShieldLabel(u)}，${statuses[u.status]}${woundedLabel(u,true)?'，'+woundedLabel(u,true):''}${conditions.length?'，'+conditions.join('、'):''}`;
+}
+
+function englishBattleStatus(b: Battle, protagonistId?: string, units = b.isOver() ? b.combatants : b.visibleCombatants('ally')): string {
+  const small = b instanceof SmallBattle ? b : undefined;
+  const mass = b instanceof SmallBattle ? undefined : b;
+  const field = small?.battlefield;
+  const isOver = b.isOver();
+  const active = !isOver && small ? units.find(u => u.id === small.active?.id)?.name ?? 'Unlocated enemy' : undefined;
+  const goal = field?.objective;
+  const objective = !field || !goal ? '' : goal.kind === 'annihilation' ? 'Objective: Defeat the enemy forces'
+    : goal.kind === 'control' ? `Objective: ${goal.attackingSide === 'enemy' ? 'Enemies' : 'Allies'} capture ${cellLabel(field, goal.cell)} (${small!.controlRounds[goal.attackingSide ?? 'ally']}/${goal.rounds} rounds)`
+      : `Objective: Escort ${units.find(u => u.id === goal.unitId)?.name ?? 'unlocated target'} to ${cellLabel(field, goal.cell)}`;
+  const end = isOver ? (small ? smallBattleResult(small) : undefined) ?? b.log.filter(e => e.kind === 'battle-end').at(-1)?.text : '';
+  const command = !isOver && mass?.commanderId ? ' · Allied commander: ' + (mass.commanderLost
+    ? 'Down, orders are automatic' : units.find(u => u.id === mass.commanderId)?.name ?? '—') : '';
+  const commandPoints = !isOver && mass && mass.rules.resolutionVersion !== 'v2'
+    ? ` · Allied command points ${mass.cp.ally} · Enemy command points ${mass.cp.enemy}` : '';
+  return [
+    `【Battle System · ${mass ? 'Formation Battle Status' : 'Current Status'}】 ${isOver ? 'Battle ended' : `Round ${b.round}${active ? ' · Active: ' + active : ''}${commandPoints}${command}`}`,
+    ...units.map(u => {
+      const ready = u.status !== 'dead' && u.status !== 'fled';
+      return (u.id === protagonistId ? '[Player] ' : '') + (u.id === mass?.commanderId ? '[Commander] ' : '')
+        + epilogueUnit(b, u, field, 'en') + (u.morale === undefined ? '' : `, Morale ${displayNumber(u.morale)}`)
+        + (ready && isAirborne(u) ? ', Airborne' : '') + (ready && !isOver && u.suppression ? ', Suppressed' : '')
+        + (ready && !isOver && u.tacticalPose ? ', Braced' : '') + (ready && !isOver && (b.reloadCd.get(u.id) ?? 0) > 0 ? ', Reloading' : '');
+    }),
+    ...(end ? [englishEventText(end)] : []),
+    ...fieldFacts(b, field, english), objective,
+  ].filter(Boolean).join('\n');
 }
 /** 按真实生命/现员损失累计，过量伤害不计入；来源按稳定id区分。成员生命编队另记减员人数。 */
 function epilogueDamage(b: Battle, language: UiLanguage): string[] {

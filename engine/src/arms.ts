@@ -1,3 +1,4 @@
+import { formatDisplayText } from './display-text.js';
 import { availableCopies } from './equipment-batches.js';
 import { displayNumber } from './display-number.js';
 import {shieldClass,shieldDurabilityMax,clampShieldDurability,energyShieldActive,energyShieldCapacity,energyShieldShare,energyShareOf,energyThresholdOf,energyShieldRecharge,energyPower,energyOverloadThreshold,clampEnergyShield,rechargeEnergyShield,type ShieldBearer} from './shield-state.js';
@@ -135,21 +136,27 @@ export function shieldDetail(unit: Combatant): string {
   return [head, '覆盖' + Math.round(shieldCoverage(unit) * 100) + '%', ...shieldStatusLabels(unit)].join(' · ');
 }
 /** R1/R15/R20 盾的状态：挂背、耐久、碎盾、能量盾剩余与过载。 */
-export function shieldStatusLabels(unit: Combatant): string[] {
+export function shieldStatusLabels(unit: Combatant, text = formatDisplayText): string[] {
   if (!isArmsV2(unit.armsModel) || !unit.shield) return [];
   const labels: string[] = [];
-  if (unit.shieldDurability) labels.push(unit.shieldDurability.remaining === 0 ? '盾已碎' : '盾 ' + Number(Math.min(unit.shieldDurability.remaining,shieldDurabilityMax(unit)).toFixed(1)) + '/' + Number(shieldDurabilityMax(unit).toFixed(1)));
-  if (!shieldUsable(unit) && unit.shieldDurability?.remaining !== 0) labels.push('盾牌挂背');
+  if (unit.shieldDurability) labels.push(unit.shieldDurability.remaining === 0 ? text('盾已碎') : text('盾 {remaining}/{capacity}', {
+    remaining: Number(Math.min(unit.shieldDurability.remaining, shieldDurabilityMax(unit)).toFixed(1)),
+    capacity: Number(shieldDurabilityMax(unit).toFixed(1)),
+  }));
+  if (!shieldUsable(unit) && unit.shieldDurability?.remaining !== 0) labels.push(text('盾牌挂背'));
   if (unit.energyShield) {
     const { remaining, overloaded } = unit.energyShield;
-    labels.push('能量盾 ' + (isArmsV3(unit.armsModel) ? Number(remaining.toFixed(1)) : displayNumber(remaining)) + '/' + displayNumber(energyShieldCapacity(unit)) + (overloaded && unit.scale !== 'hero' ? '（' + overloaded + ' 人过载）' : ''));
-    if (overloaded && unit.scale === 'hero') labels.push('能量盾过载');
+    labels.push(text('能量盾 {remaining}/{capacity}', {
+      remaining: isArmsV3(unit.armsModel) ? Number(remaining.toFixed(1)) : displayNumber(remaining),
+      capacity: displayNumber(energyShieldCapacity(unit)),
+    }) + (overloaded && unit.scale !== 'hero' ? text('（{count} 人过载）', { count: overloaded }) : ''));
+    if (overloaded && unit.scale === 'hero') labels.push(text('能量盾过载'));
   }
   return labels;
 }
 /** 战斗界面的防护层：盾耐久或能量盾剩余（含过载），再加技能屏障剩余。 */
-export function defenseLayerLabels(unit: Combatant): string[] {
-  return [...shieldStatusLabels(unit), ...(unit.barrier ? ['屏障 ' + displayNumber(unit.barrier.remaining)] : [])];
+export function defenseLayerLabels(unit: Combatant, text = formatDisplayText): string[] {
+  return [...shieldStatusLabels(unit, text), ...(unit.barrier ? [text('屏障 {value}', { value: displayNumber(unit.barrier.remaining) })] : [])];
 }
 
 export function shieldUsable(unit: ShieldBearer, incoming?: Weapon): boolean {

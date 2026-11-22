@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { standardField, SmallBattle, MassBattle, V11_OVERFLOW_D20, V11_OVERFLOW_TW, generateUnit, type BattlefieldSpec } from '../../engine/src/index.js';
-import { archivedNarrativeEvents, battleEpilogue, battleIdOf, knownBattleState, makeNarrativeBatch, narrativeEvents } from './battle-reports.js';
+import { archivedNarrativeEvents, battleEpilogue, battleIdOf, fullRoundReport, knownBattleState, makeNarrativeBatch, narrativeEvents, reportForDelivery } from './battle-reports.js';
 import { captureBattleArchive, captureBattleStart } from './report-history.js';
+import { renderTacticalBattle } from './tactical-view.js';
+import { setUiLanguage } from './ui-language.js';
 
 function unit(id: string, side: 'ally' | 'enemy', scale: 'hero' | 'company' = 'hero') {
   const u = generateUnit({ name: id, side, scale, ...(scale === 'company' ? { hpMax: 20 } : {}), rulesVersion: 'v2', level: 3, weaponClass: 'sword', weaponLevel: 3, traits: [] }, { seed: id, noVariance: true }).unit;
@@ -48,5 +50,36 @@ describe('新增战况与终章的位置', () => {
     expect(text).toContain('【战场】\n环境：平原\n地标：北坡 D5（高度2）');
     expect(text.split('【结束单位状态与血量】')[0]).toContain('我方 a(A5·高度0)：血量');
     expect(text.split('【结束单位状态与血量】')[1]).toContain('我方 a(C5·高度1)：血量');
+  });
+
+  it('renders map height and both live and archived round-report facts in the selected language', () => {
+    vi.stubGlobal('document', { documentElement: { lang: 'zh-CN' } });
+    try {
+      const b = slope(), view = { mode: 'weapon', inspectedCell: 29 };
+      const initial = renderTacticalBattle(b, view);
+      setUiLanguage('en');
+      const html = renderTacticalBattle(b, view);
+      for (const label of ['E1', 'Elevation 1', 'Elevation Rules', 'Execute Command', '<summary>Legend</summary>']) {
+        expect(html).toContain(label);
+      }
+      expect(html).not.toMatch(/>高1</);
+      setUiLanguage('zh-CN');
+      expect(renderTacticalBattle(b, view)).toBe(initial);
+      b.moveTo('a', 30);
+      const original = fullRoundReport(b);
+      const sent = reportForDelivery(fullRoundReport(b, undefined, undefined, 'en'), undefined, 'en');
+      const archived = reportForDelivery(original, undefined, 'en');
+      for (const report of [sent, archived]) {
+        expect(report).toContain('【Round-by-Round Report · 1 round】');
+        expect(report).toContain('a moved: A5 (Elevation 0) → C5 (Elevation 1)');
+        expect(report).toContain('Environment: Plains');
+        expect(report).toContain('Landmarks: 北坡 D5 (Elevation 2)');
+        expect(report).not.toMatch(/高度|环境：|血量/);
+      }
+      expect(fullRoundReport(b)).toBe(original);
+    } finally {
+      setUiLanguage('zh-CN');
+      vi.unstubAllGlobals();
+    }
   });
 });

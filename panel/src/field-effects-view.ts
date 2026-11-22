@@ -2,6 +2,7 @@ import { ZONE_NAMES, type BattleZone } from '../../engine/src/area-effects.js';
 import { activeTraitIds, traitPrerequisiteReason } from '../../engine/src/trait-sources.js';
 import { entrenched } from '../../engine/src/entrenchment.js';
 import type { Combatant } from '../../engine/src/types.js';
+import { ui } from './ui-language.js';
 
 const ICONS = {
   fire: '<path d="M12 2c2 6 7 7 7 13a7 7 0 0 1-14 0c0-3 1-5 4-8-1 5 1 5 2 6 2-3 2-7 1-11Z"/>',
@@ -12,9 +13,10 @@ const ICONS = {
   works: '<path d="M3 20v-7h5v3h8v-3h5v7M3 9h7V5h4v4h7M7 20v-3m10 3v-3"/>',
 } as const;
 const SHORT = { fire: '火墙', poison: '毒雾', smoke: '烟幕', healing: '治疗', trap: '陷阱' } as const;
-export function zoneLabel(zone: BattleZone): string { return `${SHORT[zone.kind]} ${zone.remaining}轮`; }
+export function zoneLabel(zone: BattleZone): string { return ui('{zone} {rounds}轮', { zone: ui(SHORT[zone.kind]), rounds: zone.remaining }); }
 export function zoneDetail(zone: BattleZone): string {
-  return `${ZONE_NAMES[zone.kind]} L${zone.power} · 剩余${zone.remaining}轮${zone.surface === 'platform' ? ' · 平台' : ''}`;
+  return ui('{zone} L{level} · 剩余{rounds}轮', { zone: ui(ZONE_NAMES[zone.kind]), level: zone.power, rounds: zone.remaining })
+    + (zone.surface === 'platform' ? ui(' · 平台') : '');
 }
 /** Only pass units visible to the viewer. A skill's works mark its owner's saved post, without creating a structure. */
 export function fieldWorks(units: Combatant[]): Combatant[] {
@@ -22,7 +24,7 @@ export function fieldWorks(units: Combatant[]): Combatant[] {
     && activeTraitIds(u).includes('fortification') && !traitPrerequisiteReason(u, 'fortification'));
 }
 export function worksLabelShort(works: Combatant[]): string {
-  return works.some(entrenched) ? '工事·据守' : '工事·空置';
+  return ui(works.some(entrenched) ? '工事·据守' : '工事·空置');
 }
 export function fieldEffectMarks(zones: BattleZone[], works: Combatant[]): string {
   const kinds = [...new Set(zones.map(z => z.kind)), ...(works.length ? ['works' as const] : [])];
