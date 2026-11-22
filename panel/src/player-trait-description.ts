@@ -1,3 +1,4 @@
+import { ui } from './ui-language.js';
 import type { Combatant, Trait } from '../../engine/src/types.js';
 import { displayNumber as n } from '../../engine/src/display-number.js';
 import { progression, stackingRevision } from '../../engine/src/progression.js';
@@ -18,10 +19,10 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
   const parts: string[] = [];
   const add = (when: boolean, text: string) => { if (when) parts.push(text); };
   const environment = ({ 'forest-lore': '森林', 'mountain-born': '山地', 'night-fighter': '夜间', 'plains-runner': '平原', 'urban-fighter': '巷战' } as Record<string, string>)[id];
-  add(modern && !!environment, `${environment}武器与物理伤害×${value('meleeDamage')}`);
+  add(modern && !!environment, ui('{environment}武器与物理伤害×{damage}', { environment: ui(environment ?? ''), damage: value('meleeDamage') }));
   switch (id) {
-    case 'revival': return `每战${value('revivalUses')}次，倒下后恢复${value('revivalPercent')}%生命或入场人数；致命与非致命均生效`;
-    case 'flying': return `升空越过地面障碍；空中受到地面攻击时防御+${value('flightDefense')}；落地后可近战扑击`;
+    case 'revival': return ui('每战{uses}次，倒下后恢复{percent}%生命或入场人数；致命与非致命均生效', { uses: value('revivalUses'), percent: value('revivalPercent') });
+    case 'flying': return ui('升空越过地面障碍；空中受到地面攻击时防御+{defense}；落地后可近战扑击', { defense: value('flightDefense') });
     case 'forest-lore':
       parts.push('无森林攻击惩罚');
       add(L >= 2, `森林移动每格${n(roughGroundCost(L))}点`);
@@ -50,42 +51,42 @@ export function playerTraitLevelDescription(id: string, level: number, model?: u
     case 'berserk':
       parts.push(`${modern || L >= 3 && L !== 4 ? '攻击' : L === 1 ? '近战攻击' : '武器攻击'}+${value('berserkAttack')}`);
       add(!modern && L === 4, '独立魔法攻击+1'); add(p('berserkDamage') !== 1, `伤害×${value('berserkDamage')}`); parts.push('防御−1'); break;
-    case 'melee-master': return `近战攻击+${value('meleeAttack')}，近战武器与物理伤害×${value('meleeDamage')}`;
+    case 'melee-master': return ui('近战攻击+{attack}，近战武器与物理伤害×{damage}', { attack: value('meleeAttack'), damage: value('meleeDamage') });
     case 'sharpshooter':
       if (modern) return `射击攻击+${value('meleeAttack')}，射击伤害×${value('meleeDamage')}` + (p('sharpshooterCover') ? `，忽略${value('sharpshooterCover')}点掩护` : '');
       return L === 1 ? '静止且半射程内射击攻击+1' : L === 2 ? '半射程内射击攻击+1' : L === 3 ? '射击攻击+1' : L === 4 ? '静止射击攻击+2，移动后+1' : `射击攻击+${L >= 9 ? 4 : L >= 7 ? 3 : 2}${L >= 6 ? `，忽略${L >= 8 ? 2 : 1}点掩护` : ''}${L === 10 ? '，移动射击惩罚减轻1' : ''}`;
     case 'charge-strong': return `${!modern && L === 1 ? '直线冲锋攻击+1' : !modern && L === 3 ? '直线冲锋攻击+2，其他冲锋攻击+1' : `冲锋攻击+${value('chargeAttack')}`}，冲锋伤害×${value('chargeDamage')}`;
-    case 'sneak-attack': return `潜伏出手或夹击时，武器与物理伤害×${value('sneakMultiplier')}`;
-    case 'trample': return `近战冲锋较小体型目标时，伤害×${value('trampleMultiplier')}`;
-    case 'anti-infantry': return `对未骑乘人形攻击+${value('counterAttack')}，伤害×${value('counterMultiplier')}`;
-    case 'anti-large': return `对大型、巨型、载具及骑乘目标攻击+${value('counterAttack')}，伤害×${value('counterMultiplier')}`;
-    case 'anti-air': return `对空攻击+${value(flightModel === 'maneuver-v1' ? 'flightDefense' : 'counterAttack')}，伤害×${value('counterMultiplier')}，对空额外射程消耗${value('antiAirRangeSmall')}格（会战${value('antiAirRangeMass')}阵位）`;
-    case 'ap-weapon': return `动能穿透+${value('penetrationBudget')}`;
-    case 'guardian': return `全伤害减免${pct('guardianReduction')}%，防御规格L${L}`;
+    case 'sneak-attack': return ui('潜伏出手或夹击时，武器与物理伤害×{damage}', { damage: value('sneakMultiplier') });
+    case 'trample': return ui('近战冲锋较小体型目标时，伤害×{damage}', { damage: value('trampleMultiplier') });
+    case 'anti-infantry': return ui('对未骑乘人形攻击+{attack}，伤害×{damage}', { attack: value('counterAttack'), damage: value('counterMultiplier') });
+    case 'anti-large': return ui('对大型、巨型、载具及骑乘目标攻击+{attack}，伤害×{damage}', { attack: value('counterAttack'), damage: value('counterMultiplier') });
+    case 'anti-air': return ui('对空攻击+{attack}，伤害×{damage}，对空额外射程消耗{range}格（会战{formation}阵位）', { attack: value(flightModel === 'maneuver-v1' ? 'flightDefense' : 'counterAttack'), damage: value('counterMultiplier'), range: value('antiAirRangeSmall'), formation: value('antiAirRangeMass') });
+    case 'ap-weapon': return ui('动能穿透+{value}', { value: value('penetrationBudget') });
+    case 'guardian': return ui('全伤害减免{percent}%，防御规格L{level}', { percent: pct('guardianReduction'), level: L });
     case 'kinetic-resist': case 'thermal-resist': case 'arcane-resist': {
       const channel = id === 'kinetic-resist' ? '动能' : id === 'thermal-resist' ? '热能' : '奥术';
       return revised ? `${channel}伤害减免${pct('channelResistance')}%` : modern ? `${channel}抗穿+${value('channelResistance')}` : `${channel}防护+${n(2 * p('woundRatio'))}`;
     }
-    case 'lifesteal': return `造成生命伤害后，恢复${pct('lifestealRatio')}%伤害量的生命或伤兵` + (revised ? `，每轮最多恢复${pct('lifestealRoundCap')}%生命` : '');
-    case 'regen': return `每轮基础恢复${n((modern ? p('regenAmount') : 3 * p('woundRatio')) * (recoveryModel ? 1.5 : 1))}生命或伤兵`;
-    case 'medic': return `治疗量×${value('medicHealing')}，本队减员可救率 +${medicRescueBonus(L, model)} 个百分点`;
-    case 'poison-strike': return `动能攻击造成伤害后附毒3轮，毒伤×${value(modern ? 'poisonMultiplier' : 'woundRatio')}，中毒者攻击−1`;
-    case 'fatigue-trained': return `疲劳获得×${value('fatigueMultiplier')}`;
-    case 'shield-wall': return `持盾固守时，正面远程伤害减免${pct('shieldReduction')}%`;
-    case 'fortification': return `据守时防御+${value('worksDefense')}，远程伤害减免${pct('worksReduction')}%`;
-    case 'pike-wall': return `对骑乘及机动目标攻击+${value('counterAttack')}，伤害×${value('counterMultiplier')}，固守时正面冲锋伤害减免${pct(modern ? 'pikeReduction' : 'formationReduction')}%`;
-    case 'loose-formation': return `疏散且未被近敌牵制时，范围伤害减免${pct('formationReduction')}%，编队近战展开减半、防御−1`;
-    case 'skirmisher': return `轻中装先攻+${value('skirmishInitiative')}，机动+${value('skirmishMobility')}，脱离近敌时远程伤害减免${pct('skirmishReduction')}%`;
+    case 'lifesteal': return ui('造成生命伤害后，恢复{percent}%伤害量的生命或伤兵', { percent: pct('lifestealRatio') }) + (revised ? ui('，每轮最多恢复{percent}%生命', { percent: pct('lifestealRoundCap') }) : '');
+    case 'regen': return ui('每轮基础恢复{amount}生命或伤兵', { amount: n((modern ? p('regenAmount') : 3 * p('woundRatio')) * (recoveryModel ? 1.5 : 1)) });
+    case 'medic': return ui('治疗量×{amount}，本队减员可救率 +{percent} 个百分点', { amount: value('medicHealing'), percent: medicRescueBonus(L, model) });
+    case 'poison-strike': return ui('动能攻击造成伤害后附毒3轮，毒伤×{damage}，中毒者攻击−1', { damage: value(modern ? 'poisonMultiplier' : 'woundRatio') });
+    case 'fatigue-trained': return ui('疲劳获得×{value}', { value: value('fatigueMultiplier') });
+    case 'shield-wall': return ui('持盾固守时，正面远程伤害减免{percent}%', { percent: pct('shieldReduction') });
+    case 'fortification': return ui('据守时防御+{defense}，远程伤害减免{percent}%', { defense: value('worksDefense'), percent: pct('worksReduction') });
+    case 'pike-wall': return ui('对骑乘及机动目标攻击+{attack}，伤害×{damage}，固守时正面冲锋伤害减免{percent}%', { attack: value('counterAttack'), damage: value('counterMultiplier'), percent: pct(modern ? 'pikeReduction' : 'formationReduction') });
+    case 'loose-formation': return ui('疏散且未被近敌牵制时，范围伤害减免{percent}%，编队近战展开减半、防御−1', { percent: pct('formationReduction') });
+    case 'skirmisher': return ui('轻中装先攻+{initiative}，机动+{mobility}，脱离近敌时远程伤害减免{reduction}%', { initiative: value('skirmishInitiative'), mobility: value('skirmishMobility'), reduction: pct('skirmishReduction') });
     case 'tenacity': return `控制抵抗+${value('controlResistance')}，${L >= 5 ? '免疫击退、拉拽' : `抵挡强度${value('pushLimit')}以内的击退、拉拽`}`;
     case 'agile': return `困难地形额外移动消耗减少${n(100 - p('agileTerrain') * 100)}%，${L >= 5 ? '脱离近战免借机攻击' : `借机伤害减免${pct('agileReactionReduction')}%`}` + (p('agileInitiative') ? `，先攻+${value('agileInitiative')}` : '') + (p('agileMobility') ? `，机动+${value('agileMobility')}` : '');
-    case 'siege-breaker': return `对建筑、城墙等结构伤害×${value('engineerDamage')}，削弱目标工事防御与远程减伤${pct('engineerSuppression')}%`;
-    case 'stubborn': return `士气韧性+${value('resilience')}`;
-    case 'commander': return `${commandRangeAtLevel(L, 'small', commandRangeModel)}格内友军士气支援+${value('command')}（会战${commandRangeAtLevel(L, 'mass', commandRangeModel)}阵位）`;
+    case 'siege-breaker': return ui('对建筑、城墙等结构伤害×{damage}，削弱目标工事防御与远程减伤{percent}%', { damage: value('engineerDamage'), percent: pct('engineerSuppression') });
+    case 'stubborn': return ui('士气韧性+{value}', { value: value('resilience') });
+    case 'commander': return ui('{range}格内友军士气支援+{value}（会战{formation}阵位）', { range: commandRangeAtLevel(L, 'small', commandRangeModel), value: value('command'), formation: commandRangeAtLevel(L, 'mass', commandRangeModel) });
     case 'fear': return `3格内敌军承受${value('fearPressure')}点恐惧压力，攻击最多−2（会战1阵位）` + (L >= 8 ? `，士气≤50时可惊退敌人，难度${12 + 2 * (L - 8)}` : '');
-    case 'stalk': return '潜伏行动，在掩护或夜间休整可重新潜伏';
-    case 'recon': return `识破潜伏，为曲射火力校射+${value('reconSpotting')}`;
+    case 'stalk': return ui('潜伏行动，在掩护或夜间休整可重新潜伏');
+    case 'recon': return ui('识破潜伏，为曲射火力校射+{value}', { value: value('reconSpotting') });
   }
-  return parts.join('，');
+  return parts.join(ui('，'));
 }
 
 const EFFECTS: Record<string, string> = {

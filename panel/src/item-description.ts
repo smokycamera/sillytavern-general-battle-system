@@ -8,6 +8,8 @@ import { enhancementLabel, type Enhancements } from '../../engine/src/enhancemen
 import { diceAvg } from '../../engine/src/data/weapons.js';
 import { gridAbility } from '../../engine/src/small/skill-range.js';
 import { playerTraitDescription, playerTraitLevelDescription } from './player-trait-description.js';
+import { ui, uiLanguage } from './ui-language.js';
+import { skillMechanismName, skillMechanismFromId } from '../../engine/src/data/skill-mechanisms.js';
 
 const ZONES: Record<string, string> = { fire: '火墙', poison: '毒雾', smoke: '烟幕', healing: '治疗区域', trap: '陷阱' };
 const MOVES: Record<string, string> = { dash: '突进', blink: '闪现', withdraw: '后撤' };
@@ -30,40 +32,57 @@ export function itemEffectRows(value: ItemValue): { stat: EffectStat; name: stri
 }
 function effectText(e: EffectOp, a: Ability): string {
   switch (e.op) {
-    case 'heal': return `治疗${e.amount !== undefined ? displayNumber(e.amount) : e.dice}生命`;
-    case 'damage': return `伤害约${Math.round(diceAvg(e.baseDice) * (a.damageScale ?? 1))}${e.shape === 'burst' ? '（范围）' : ''}`;
-    case 'condition': return `${standardConditionMap().get(e.conditionId)?.name ?? e.conditionId}${displayNumber(e.dur)}轮${e.magnitude !== undefined ? '（效力'+Math.round(e.magnitude*100)+'%）' : ''}${e.saveDC ? '，抵抗难度'+displayNumber(e.saveDC) : ''}`;
-    case 'barrier': return `屏障${displayNumber(e.amount)}点，${displayNumber(e.dur)}轮`;
-    case 'dispel': return e.polarity === 'negative' ? `清除${displayNumber(e.count)}项不利状态` : `驱散${displayNumber(e.count)}项增益`;
-    case 'resource': return `精力${e.amount > 0 ? '+' : ''}${displayNumber(e.amount)}`;
-    case 'morale': return `士气${e.amount > 0 ? '+' : ''}${displayNumber(e.amount)}`;
-    case 'trait': return `${traitRegistry().get(e.traitId)?.name ?? e.traitId}${e.level ? 'L' + e.level : ''}，${displayNumber(e.dur)}轮`;
-    case 'zone': return `${ZONES[e.kind] ?? '区域'}${displayNumber(e.dur)}轮${e.amount !== undefined ? '，每轮' + (e.kind === 'healing' ? '治疗' : '伤害') + displayNumber(e.amount) : ''}${e.effects?.length ? '，' + e.effects.filter(child => !(e.kind === 'healing' && e.amount !== undefined && child.op === 'heal')).map(child=>effectText(child,a)).join('、') : ''}`.replace(/，$/, '');
-    case 'summon': return `召唤${displayNumber(e.count)}个单位`;
-    case 'push': return (e.direction === 'towards' ? '拉拽' : '击退') + '1步，强度' + displayNumber(e.force);
-    case 'move': return `${MOVES[e.mode]}${displayNumber(e.reach)}格`;
+    case 'heal': return ui('治疗{amount}生命', { amount: e.amount !== undefined ? displayNumber(e.amount) : e.dice ?? '0' });
+    case 'damage': return ui(e.shape === 'burst' ? '伤害约{amount}（范围）' : '伤害约{amount}', { amount: Math.round(diceAvg(e.baseDice) * (a.damageScale ?? 1)) });
+    case 'condition': return ui('{effect}{rounds}轮', { effect: ui(standardConditionMap().get(e.conditionId)?.name ?? e.conditionId), rounds: displayNumber(e.dur) })
+      + (e.magnitude !== undefined ? ui('（效力{value}%）', { value: Math.round(e.magnitude * 100) }) : '')
+      + (e.saveDC ? ui('，抵抗难度{value}', { value: displayNumber(e.saveDC) }) : '');
+    case 'barrier': return ui('屏障{amount}点，{rounds}轮', { amount: displayNumber(e.amount), rounds: displayNumber(e.dur) });
+    case 'dispel': return ui(e.polarity === 'negative' ? '清除{count}项不利状态' : '驱散{count}项增益', { count: displayNumber(e.count) });
+    case 'resource': return ui('精力{value}', { value: (e.amount > 0 ? '+' : '') + displayNumber(e.amount) });
+    case 'morale': return ui('士气{value}', { value: (e.amount > 0 ? '+' : '') + displayNumber(e.amount) });
+    case 'trait': return ui('{effect}，{rounds}轮', { effect: ui(traitRegistry().get(e.traitId)?.name ?? e.traitId) + (e.level ? 'L' + e.level : ''), rounds: displayNumber(e.dur) });
+    case 'zone': return [
+      ui('{effect}{rounds}轮', { effect: ui(ZONES[e.kind] ?? '区域'), rounds: displayNumber(e.dur) }),
+      e.amount === undefined ? '' : ui(e.kind === 'healing' ? '每轮治疗{amount}' : '每轮伤害{amount}', { amount: displayNumber(e.amount) }),
+      e.effects?.filter(child => !(e.kind === 'healing' && e.amount !== undefined && child.op === 'heal')).map(child => effectText(child, a)).join(ui('、')),
+    ].filter(Boolean).join(ui('，'));
+    case 'summon': return ui('召唤{count}个单位', { count: displayNumber(e.count) });
+    case 'push': return ui(e.direction === 'towards' ? '拉拽1步，强度{force}' : '击退1步，强度{force}', { force: displayNumber(e.force) });
+    case 'move': return ui('{move}{range}格', { move: ui(MOVES[e.mode] ?? e.mode), range: displayNumber(e.reach) });
   }
 }
 /** 行动道具：怎么用、多远、效果。 */
 export function itemAbilitySummary(a: Ability): string {
-  return [a.usesPerBattle ? `每战${a.usesPerBattle}次` : '', a.itemQuick ? '自身或相邻友军，可用加速动作' : '占主行动',
-    a.range && a.range.max > 1 ? `射程${displayNumber(gridAbility(a, 'arms-v2').range!.max)}格` : '', ...a.effects.map((e) => effectText(e, a)), a.delivery === 'magic' ? '魔法' : ''].filter(Boolean).join('，');
+  return [a.usesPerBattle ? ui('每战{value}次', { value: a.usesPerBattle }) : '', ui(a.itemQuick ? '自身或相邻友军' : '占主行动'),
+    a.range && a.range.max > 1 ? ui('射程{range}格', { range: displayNumber(gridAbility(a, 'arms-v2').range!.max) }) : '', ...a.effects.map((e) => effectText(e, a)), a.delivery === 'magic' ? ui('魔法') : ''].filter(Boolean).join(ui('，'));
+}
+
+export function abilityDescription(a: Ability): string {
+  const description = (a.desc ?? '').replace('，可用加速动作', '');
+  if (uiLanguage() === 'zh-CN') return description;
+  if (a.itemSourceId) return itemAbilitySummary(a);
+  const mechanism = a.recipe ?? skillMechanismFromId(a.definitionId ?? a.id);
+  const separator = description.indexOf('；强度与装备/目标条件共同决定结果，');
+  return mechanism && separator >= 0
+    ? skillMechanismName(mechanism, ui) + ui(description.slice(separator))
+    : ui(description);
 }
 export function itemPassiveSummary(p: ItemPassive, model?: unknown, detailed = true): string {
   const traits = p.traits.map((t) => {
-    const trait = traitRegistry().get(t.id), name = trait?.name ?? t.id;
+    const trait = traitRegistry().get(t.id), name = ui(trait?.name ?? t.id);
     return isGradedTrait(t.id) ? `${name}L${t.level ?? 5}${detailed ? '（' + playerTraitLevelDescription(t.id, t.level ?? 5, model) + '）' : ''}` : trait && detailed ? `${name}（${playerTraitDescription(trait)}）` : name;
   });
   const values = wornItemEffects({ passive: p }).values;
-  const actual = [...new Set([...Object.keys(p.bonuses ?? {}), ...Object.keys(values)])].map(k => BONUS_NAMES[k as EffectStat] + wornEffectAmount(k as EffectStat, values[k as EffectStat] ?? 0)
-    + (k === 'speed' && p.actualEffects?.uncappedNegative ? '（先攻' + wornEffectAmount('speed', 2 * (values.speed ?? 0)) + '）' : '')).join('、');
-  return [traits.join('；'), p.barrier ? `开战屏障${displayNumber(p.barrier.amount)}点（L${p.barrier.power}），每战一次` : '', actual].filter(Boolean).join('；');
+  const actual = [...new Set([...Object.keys(p.bonuses ?? {}), ...Object.keys(values)])].map(k => ui(BONUS_NAMES[k as EffectStat]) + wornEffectAmount(k as EffectStat, values[k as EffectStat] ?? 0)
+    + (k === 'speed' && p.actualEffects?.uncappedNegative ? ui('（先攻{value}）', { value: wornEffectAmount('speed', 2 * (values.speed ?? 0)) }) : '')).join(ui('、'));
+  return [traits.join(ui('；')), p.barrier ? ui('开战屏障{amount}点（L{power}），每战一次', { amount: displayNumber(p.barrier.amount), power: p.barrier.power }) : '', actual].filter(Boolean).join(ui('；'));
 }
 /** 库存卡片与审批预览共用的一句话说明；形态已在卡片标题里。 */
 export function itemValueSummary(value: ItemValue, name?: string): string {
   const r = value.recipe;
   const spec = itemSpecText(r), historical = value.passive?.bonuses && r.wornEffectModel !== WORN_ANCHORED_MODEL;
-  return [name !== undefined ? '' : spec, value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive, STACKING_MODEL, false) : '', historical ? '旧版数值' : ''].filter(Boolean).join(' · ');
+  return [name !== undefined ? '' : spec, value.ability ? itemAbilitySummary(value.ability) : '', value.passive ? itemPassiveSummary(value.passive, STACKING_MODEL, false) : '', historical ? ui('旧版数值') : ''].filter(Boolean).join(' · ');
 }
 
 /**

@@ -95,6 +95,22 @@ const unitEventPatterns: readonly [RegExp, string][] = [
   [/^(.+?) (溺水|窒息)，损失([\d.]+)生命$/, '$1 suffered $3 HP loss from $2'],
 ];
 
+export function englishBattleOutcome(source: string): string {
+  const side = /^(我方|敌方|第三方)战斗胜利$/.exec(source);
+  if (side) return english('{side}战斗胜利', { side: english(side[1]!) });
+  const control = /^(我方|敌方|第三方)(作为攻方)?占旗获胜：控制(旗区|旗点)([A-Z]+\d+)满(\d+)个完整回合（(\d+\/\d+)）；本场因占领取胜结束(；第三方获胜，我方失败)?$/.exec(source);
+  if (control) return english('{side}占旗获胜：控制{objective}{cell}满{rounds}个完整回合（{progress}）', {
+    side: english(control[1]!), objective: english(control[3]!), cell: control[4]!, rounds: control[5]!, progress: control[6]!,
+  }) + (control[7] ? ' · ' + english('第三方获胜，我方失败') : '');
+  const defense = /^(我方|敌方|第三方)作为守方守城成功：攻方未在第(\d+)轮期限内完成(\d+)个完整回合的占领，守方获胜$/.exec(source);
+  if (defense) return english('{side}守城成功：攻方未在第{limit}轮期限内完成{rounds}个完整回合的占领', {
+    side: english(defense[1]!), limit: defense[2]!, rounds: defense[3]!,
+  });
+  const mission = /^任务结束：(ally|enemy|neutral|draw)$/.exec(source);
+  if (mission) return english(({ ally: '任务胜利', enemy: '任务失败', neutral: '第三方获胜，我方失败', draw: '任务结束：僵持' } as Record<string, string>)[mission[1]!]!);
+  return english(source);
+}
+
 /** Localize only the terrain tokens inside a recorded position. Its landmark name is authored text. */
 function englishPlace(place: string): string {
   return place.replace(/(^[A-Z]+\d+(?:〔[^〕]*〕)?)(?:\(([^()]*)\))$/, (_, cell: string, details: string) =>
@@ -142,6 +158,12 @@ export function englishEventText(source: string): string {
 }
 
 function englishBattleEvent(source: string): string {
+  const split = /^(.+?)：分出(.+)分队(\d+) (\d+)人，原队余(\d+)人$/.exec(source);
+  if (split && split[1]!.replace(/分队\d+$/, '') === split[2]) {
+    return english('{parent}：分出{child} {count}人，原队余{remaining}人', {
+      parent: split[1]!, child: english('{name}分队{number}', { name: split[2]!, number: split[3]! }), count: split[4]!, remaining: split[5]!,
+    });
+  }
   if (source.startsWith('布阵：')) {
     const deployment = source.slice(3).replace(new RegExp(` ${position}(?=，|$)`, 'g'), place => ' ' + englishPlace(place.slice(1)));
     return 'Deployment: ' + deployment;
@@ -189,7 +211,7 @@ function englishBattleEvent(source: string): string {
   for (const [ending, translated] of Object.entries(eventEndings)) {
     if (source.endsWith(' ' + ending)) return source.slice(0, -ending.length) + translated;
   }
-  return english(source);
+  return englishBattleOutcome(source);
 }
 
 export function englishReportEvents(entries: readonly BattleLogEntry[], fallback: string, field?: BattlefieldSpec): string {
@@ -219,24 +241,38 @@ const savedStatus: [RegExp, string][] = [
   [/能量盾过载/g, 'Energy shield overloaded'], [/能量盾([\d.]+\/[\d.]+)/g, 'Energy Shield $1'],
   [/可救伤兵(\d+)人?/g, '$1 recoverable wounded'], [/编队失去战斗力/g, 'Combat ineffective'],
   [/濒死/g, 'Dying'], [/†死亡/g, '†Dead'], [/溃逃/g, 'Routing'], [/撤离/g, 'Withdrawn'],
+  [/可行动/g, 'Ready'], [/阵亡/g, 'Dead'], [/溃退中/g, 'Routing'], [/已(?=Withdrawn)/g, ''],
   [/距已知敌(\d+)格/g, '$1 tiles from known enemies'], [/未定位敌军/g, 'Enemy unlocated'],
   [/高度(-?\d+(?:–-?\d+)?)/g, 'Elevation $1'],
   [/【主控】/g, '[Player] '], [/【指挥官】/g, '[Commander] '],
 ];
 
 function englishSavedStatus(line: string): string {
-  const splitAt = line.search(/\s(?:血量|剩余总人数|剩余总数)[\d.]/);
+  const splitAt = line.search(/[\s：](?:血量|剩余总人数|剩余总数)[\d.]/);
   if (splitAt < 0) return line;
   const prefix = line.slice(0, splitAt).replace(/^【主控】/, '[Player] ').replace(/^【指挥官】/, '[Commander] ');
   const place = /\(([A-Z]+\d+)(·[^()]*)?\)$/.exec(prefix);
+  const rank = /\((左翼|中军|右翼)(前列|后列|预备列)\)$/.exec(prefix);
   const location = place ? prefix.slice(0, place.index) + ' (' + place[1] + (place[2] ?? '')
     .split('·').map((value, i) => i === 0 ? '' : ' · ' + (/^(?:距已知敌|未定位敌军)/.test(value)
-      ? savedStatus.reduce((part, [pattern, replacement]) => part.replace(pattern, replacement), value) : englishPlaceDetail(value))).join('') + ')' : prefix;
-  return location + savedStatus.reduce((tail, [pattern, replacement]) => tail.replace(pattern, replacement), line.slice(splitAt));
+      ? savedStatus.reduce((part, [pattern, replacement]) => part.replace(pattern, replacement), value) : englishPlaceDetail(value))).join('') + ')'
+    : rank ? prefix.slice(0, rank.index) + ' (' + english(rank[1]!) + ' · ' + english(rank[2]!) + ')' : prefix;
+  const facts = savedStatus.reduce((tail, [pattern, replacement]) => tail.replace(pattern, replacement), line.slice(splitAt + 1));
+  return location + (line[splitAt] === '：' ? ': ' : ' ') + facts.split(/[，、]/).map(part => english(part)).join(', ');
 }
 
 function englishArchivedLine(line: string): string {
   if (line.startsWith('▸ ')) return '▸ ' + englishEventText(line.slice(2));
+  const epilogue = /^【战阵·战斗终章】(.+?)，共(\d+)轮；(.+)$/.exec(line);
+  if (epilogue) return '【Battle System · Epilogue】 ' + english(epilogue[2] === '1' ? '{mission}，共1轮；{result}' : '{mission}，共{rounds}轮；{result}', {
+    mission: english(epilogue[1]!), rounds: epilogue[2]!, result: englishBattleOutcome(epilogue[3]!),
+  });
+  if (line.startsWith('【胜负原因】')) return '【Outcome】 ' + englishBattleOutcome(line.slice('【胜负原因】'.length));
+  if (line.startsWith('【本场规则】')) return '【Battle Rules】 ' + english(line.slice('【本场规则】'.length));
+  const roundEvent = /^第(\d+)(?:回合|轮)｜(.+)$/.exec(line);
+  if (roundEvent) return 'Round ' + roundEvent[1] + ' · ' + englishEventText(roundEvent[2]!);
+  const unit = /^(我方|敌方|第三方) (.+[：](?:血量|剩余总人数|剩余总数)[\d.]+\/.*)$/.exec(line);
+  if (unit) return english(unit[1]!) + ' ' + englishSavedStatus(unit[2]!);
   const side = /^(我方|敌方|第三方|我军|敌军)：(.*)$/.exec(line);
   if (side && /(?:血量|剩余总人数|剩余总数)[\d.]+\//.test(side[2]!)) {
     return english(side[1]!) + ': ' + side[2]!.split('；').map(englishSavedStatus).join('; ');
@@ -256,7 +292,7 @@ function englishArchivedLine(line: string): string {
   if (start) return `【${headings[start[1]!]}】 ${english(start[2]!)}`;
   const turn = /^【战阵·当前状态】第(\d+)回合｜轮到：(.*)$/.exec(line);
   if (turn) return `【${headings['战阵·当前状态']}】 Round ${turn[1]} · Active: ${turn[2] === '未定位的敌方行动' ? 'Unlocated enemy' : turn[2]}`;
-  return line;
+  return englishBattleOutcome(line);
 }
 
 export function englishReportDocument(text: string): string {

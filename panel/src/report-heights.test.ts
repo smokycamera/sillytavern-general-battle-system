@@ -4,6 +4,7 @@ import { archivedNarrativeEvents, battleEpilogue, battleIdOf, fullRoundReport, k
 import { captureBattleArchive, captureBattleStart } from './report-history.js';
 import { renderTacticalBattle } from './tactical-view.js';
 import { setUiLanguage } from './ui-language.js';
+import { battleReason, battleOptionLabel, battleUnitName } from './battle-display.js';
 
 function unit(id: string, side: 'ally' | 'enemy', scale: 'hero' | 'company' = 'hero') {
   const u = generateUnit({ name: id, side, scale, ...(scale === 'company' ? { hpMax: 20 } : {}), rulesVersion: 'v2', level: 3, weaponClass: 'sword', weaponLevel: 3, traits: [] }, { seed: id, noVariance: true }).unit;
@@ -50,6 +51,12 @@ describe('新增战况与终章的位置', () => {
     expect(text).toContain('【战场】\n环境：平原\n地标：北坡 D5（高度2）');
     expect(text.split('【结束单位状态与血量】')[0]).toContain('我方 a(A5·高度0)：血量');
     expect(text.split('【结束单位状态与血量】')[1]).toContain('我方 a(C5·高度1)：血量');
+    for (const report of [text, battleEpilogue(b, start, 'en')]) {
+      const english = reportForDelivery(report, undefined, 'en');
+      expect(english).toContain('【Battle System · Epilogue】 Elimination · 1 round');
+      expect(english).toContain('【Outcome】 The player ended hostilities');
+      expect(english).not.toMatch(/停止交战|停战\/僵持|血量|高度/);
+    }
   });
 
   it('renders map height and both live and archived round-report facts in the selected language', () => {
@@ -63,6 +70,11 @@ describe('新增战况与终章的位置', () => {
         expect(html).toContain(label);
       }
       expect(html).not.toMatch(/>高1</);
+      const unit = { id: 'a:split:1', name: '北境卫队分队1', transportOrigin: 'a' };
+      expect(battleUnitName(unit)).toBe('北境卫队 Detachment 1');
+      expect(battleUnitName({ ...unit, transportOrigin: undefined })).toBe(unit.name);
+      expect(battleReason('需架设：本次激活已移动，不能用Field Gun开火')).toContain('Field Gun cannot fire after moving');
+      expect(battleOptionLabel({ id: 'weapon', kind: 'weapon', label: 'Field Gun · 可用 2／持有 2', enabled: false })).toBe('Field Gun · 2 available / 2 held');
       setUiLanguage('zh-CN');
       expect(renderTacticalBattle(b, view)).toBe(initial);
       b.moveTo('a', 30);

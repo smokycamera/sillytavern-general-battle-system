@@ -67,6 +67,17 @@ it('opens each equipment description with its class, saved level and enhancement
   expect(f.save()).toEqual(before);
 });
 
+it('shows consumable targets and effects without mentioning haste in either language', () => {
+  const f = mount();
+  const card = () => document.querySelector('[data-inventory-id="a-bag"]')!.textContent!;
+  expect(card()).toMatch(/自身或相邻友军，治疗[\d.]+生命/);
+  expect(card()).not.toContain('可用加速动作');
+  setUiLanguage('en'); f.render();
+  expect(card()).toMatch(/Self or adjacent ally, Heals [\d.]+ HP/);
+  expect(card()).not.toMatch(/haste|[\p{Script=Han}]/iu);
+  expect(f.save().inventory!.find(item => item.id === 'a-bag')?.mechanics?.kind).toBe('item');
+});
+
 it('旧主副武器统一显示为武器，排在护甲、盾牌、佩戴之前，不受库存写入顺序影响', () => {
   const f = mount(), inventory = f.save().inventory!;
   const primary = inventory.find(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary')!;

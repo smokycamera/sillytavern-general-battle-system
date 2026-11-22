@@ -1,3 +1,4 @@
+import { battleReason } from './battle-display.js';
 import { ui } from './ui-language.js';
 import { batchWeapons, protectionGroups } from '../../engine/src/equipment-batches.js';
 import { rideEditor } from './ride-editor.js';
@@ -119,7 +120,7 @@ function gearText(record: UnitRecord | undefined): string {
 function gearComparison(before: UnitRecord | undefined, after: UnitRecord): string {
   const rows: string[] = [];
   const compare = (label: string, a: unknown, b: unknown) => {
-    if (a !== b) rows.push(`<tr><td>${label}</td><td>${esc(a)}</td><td>${esc(b)}</td></tr>`);
+    if (a !== b) rows.push(`<tr><td>${ui(label)}</td><td>${esc(a)}</td><td>${esc(b)}</td></tr>`);
   };
   const previous = before?.snapshot ? batchWeapons(before.snapshot) : [];
   const current = after.snapshot ? batchWeapons(after.snapshot) : [];
@@ -144,14 +145,14 @@ function gearComparison(before: UnitRecord | undefined, after: UnitRecord): stri
     compare(channelNames[channel] + '防护', before?.snapshot ? anchoredProtection(before.snapshot, channel) : '—', after.snapshot ? anchoredProtection(after.snapshot, channel) : '—');
     compare('盾牌 · ' + channelNames[channel] + '防护', before?.snapshot ? shieldProtection(before.snapshot, channel) : '—', after.snapshot ? shieldProtection(after.snapshot, channel) : '—');
   }
-  compare('负重', before?.snapshot ? equipmentLoadLabel(before.snapshot) : '—', after.snapshot ? equipmentLoadLabel(after.snapshot) : '—');
+  compare('负重', before?.snapshot ? equipmentLoadLabel(before.snapshot, ui) : '—', after.snapshot ? equipmentLoadLabel(after.snapshot, ui) : '—');
   return rows.length ? `<table class="gear-comparison"><thead><tr><th>${ui("变化")}</th><th>${ui("当前")}</th><th>${ui("装备后")}</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
 }
 function previewHtml(preview: InventoryPreview): string {
   const intent = preview.intent;
   if (intent.kind === 'discard-many') {
     const names = new Map(preview.before.inventory?.map(item => [item.id, item.name]));
-    return `<div class="inventory-preview" data-role="inventory-preview" role="alertdialog" aria-label="${ui("确认批量删除")}"><h3>删除已选的${intent.items.length}项物品？</h3>
+    return `<div class="inventory-preview" data-role="inventory-preview" role="alertdialog" aria-label="${ui("确认批量删除")}"><h3>${ui('删除已选的{count}项物品？', { count: intent.items.length })}</h3>
       <div class="inventory-delete-list">${intent.items.map(item => `<div>${esc(names.get(item.itemId) ?? item.itemId)} ×${item.qty}</div>`).join('')}</div>
       <div class="row"><button class="danger" data-action="inventory-confirm">${ui("确认删除")}</button><button data-action="inventory-cancel">${ui("取消")}</button></div></div>`;
   }
@@ -169,26 +170,26 @@ function previewHtml(preview: InventoryPreview): string {
       const prior = old?.abilities.find((b) => b.id === a.id);
       const previousReason = prior && old ? abilityUsabilityReason(old, prior) ?? '可用' : '未拥有';
       const reason = abilityUsabilityReason(current, a) ?? '可用';
-      return previousReason === reason ? '' : `${a.name}：${previousReason} → ${reason}`;
+      return previousReason === reason ? '' : ui('{name}：{before} → {after}', { name: a.name, before: battleReason(previousReason), after: battleReason(reason) });
     }).filter(Boolean).join('；');
     const lifeChanged = !before || before.hp !== record.hp || before.base.hpMax !== record.base.hpMax;
     const levelChanged = !before || before.level !== record.level;
     const beforeGear = gearText(before), afterGear = gearText(record);
-    return `<div class="inventory-difference"><b>${esc(record.name)}</b>${gearComparison(before, record)}${lifeChanged ? `<p>${record.scale === 'hero' ? '生命' : '人数'} ${before?.hp ?? '—'}/${before?.base.hpMax ?? '—'} → ${displayNumber(record.hp)}/${displayNumber(record.base.hpMax)}</p>` : ''}${levelChanged ? `<p>${ui("训练")} ${before?.level ?? '—'} → ${record.level}</p>` : ''}${skills ? `<p>${esc(skills)}</p>` : ''}${beforeGear !== afterGear ? `<details data-detail-id="gear-preview-${esc(record.id)}"><summary>${ui("查看完整配装")}</summary><p>${ui("当前：")}${esc(beforeGear)}<br>${ui("装备后：")}${esc(afterGear)}</p></details>` : ''}</div>`;
+    return `<div class="inventory-difference"><b>${esc(record.name)}</b>${gearComparison(before, record)}${lifeChanged ? `<p>${ui(record.scale === 'hero' ? '生命' : '人数')} ${before?.hp ?? '—'}/${before?.base.hpMax ?? '—'} → ${displayNumber(record.hp)}/${displayNumber(record.base.hpMax)}</p>` : ''}${levelChanged ? `<p>${ui("训练")} ${before?.level ?? '—'} → ${record.level}</p>` : ''}${skills ? `<p>${esc(skills)}</p>` : ''}${beforeGear !== afterGear ? `<details data-detail-id="gear-preview-${esc(record.id)}"><summary>${ui("查看完整配装")}</summary><p>${ui("当前：")}${esc(beforeGear)}<br>${ui("装备后：")}${esc(afterGear)}</p></details>` : ''}</div>`;
   }).join('');
   const created = intent.kind === 'define' ? preview.after.inventory?.find((i) => i.sourceItemId === intent.itemId && i.id !== intent.itemId && !preview.before.inventory?.some((old) => old.id === i.id)) : undefined;
   const selected = created ?? afterItem;
-  const owner = afterItem?.assignedTo ? preview.after.storage?.find((r) => r.id === afterItem.assignedTo)?.name : '未分配';
-  const itemChanges = beforeItem && afterItem ? [beforeItem.qty !== afterItem.qty ? `数量 ${beforeItem.qty} → ${afterItem.qty}` : '', beforeItem.assignedTo !== afterItem.assignedTo ? '归属：' + (owner ?? '未分配') : ''].filter(Boolean).join(' · ') : '';
+  const owner = afterItem?.assignedTo ? preview.after.storage?.find((r) => r.id === afterItem.assignedTo)?.name : ui('未分配');
+  const itemChanges = beforeItem && afterItem ? [beforeItem.qty !== afterItem.qty ? ui('数量 {before} → {after}', { before: beforeItem.qty, after: afterItem.qty }) : '', beforeItem.assignedTo !== afterItem.assignedTo ? ui('归属：{owner}', { owner: owner ?? ui('未分配') }) : ''].filter(Boolean).join(' · ') : '';
   // 收缴：列出从该单位转入公共库存的物品。
   const collected = intent.kind === 'collect' ? (preview.before.inventory ?? []).filter((item) => item.assignedTo === intent.unitId && !preview.after.inventory?.find((i) => i.id === item.id)?.assignedTo) : [];
-  return `<div class="inventory-preview" data-role="inventory-preview"><h3>${labels[intent.kind]} · 确认前预览</h3>
+  return `<div class="inventory-preview" data-role="inventory-preview"><h3>${ui(labels[intent.kind])} · ${ui('确认前预览')}</h3>
     ${collected.length ? `<div class="inventory-delete-list" data-role="collect-list"><p>${ui("转入公共库存：")}</p>${collected.map((item) => `<div>${esc(item.name)} ×${item.qty}</div>`).join('')}</div>` : ''}
     ${selected ? `<b>${esc(selected.name)}</b><p>${esc(itemDescription(selected))}</p>` : ''}
     ${(intent.kind === 'reforge' || intent.kind === 'upgrade-budget') && beforeItem ? `<details data-detail-id="item-before-edit"><summary>${ui("查看修改前属性")}</summary><p>${esc(itemDescription(beforeItem))}</p></details>` : ''}
     ${itemChanges ? `<div>${esc(itemChanges)}</div>` : ''}
-    ${intent.kind === 'unequip' ? `<p>${ui("卸下")} ${intent.qty ?? beforeItem?.qty ?? 1} 件。</p>` : ''}${units}
-    <div class="row"><button class="primary" data-action="inventory-confirm">${ui("确认")}${labels[intent.kind]}</button><button data-action="inventory-cancel">${ui("取消预览")}</button></div></div>`;
+    ${intent.kind === 'unequip' ? `<p>${ui('卸下 {count} 件。', { count: intent.qty ?? beforeItem?.qty ?? 1 })}</p>` : ''}${units}
+    <div class="row"><button class="primary" data-action="inventory-confirm">${ui('确认{action}', { action: ui(labels[intent.kind]) })}</button><button data-action="inventory-cancel">${ui("取消预览")}</button></div></div>`;
 }
 
 /** 只展示和提交意图；所有数据变化由常驻控制器校验、保存和发布。 */
@@ -457,7 +458,7 @@ export class InventoryPanel {
       && items.some((item) => item.assignedTo === current.id && (!item.mechanics || item.mechanics.kind === 'item'));
     const d = this.draft, disabled = locked || this.committing ? 'disabled' : '';
     const select = (role: string, value: string, choices: [string, string][], disabled = false) => `<select data-role="inventory-${role}" ${disabled ? 'disabled' : ''}>${choices.map(([id, name]) => `<option value="${esc(id)}" ${id === value ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>`;
-    const feedback = `<div data-role="inventory-feedback" aria-live="polite">${this.error ? `<p class="grid-reason">${esc(ui(this.error))}</p>` : ''}${this.preview ? previewHtml(this.preview).replaceAll('data-action="inventory-confirm"', 'data-action="inventory-confirm"' + (this.committing ? ' disabled' : '')) : ''}</div>`;
+    const feedback = `<div data-role="inventory-feedback" aria-live="polite">${this.error ? `<p class="grid-reason">${esc(battleReason(this.error))}</p>` : ''}${this.preview ? previewHtml(this.preview).replaceAll('data-action="inventory-confirm"', 'data-action="inventory-confirm"' + (this.committing ? ' disabled' : '')) : ''}</div>`;
     const card = (item: InventoryItem): string => {
       const m = item.mechanics, equipped = item.equippedTo, itemData = `data-item="${esc(item.id)}"`;
       const single = m?.kind === 'item' && m.value.recipe.form === 'single';

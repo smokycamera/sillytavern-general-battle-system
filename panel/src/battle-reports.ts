@@ -15,6 +15,7 @@ import { applySettlementPrompt, type PromptSettings } from './prompt-settings.js
 import { isCommunicationLog } from '../../engine/src/diplomacy.js';
 import { displayTextFor, type UiLanguage } from './ui-language.js';
 import { englishEventText, englishReportDocument, englishReportEvents } from './report-language.js';
+import { battleUnitName } from './battle-display.js';
 
 const english = displayTextFor('en');
 
@@ -124,7 +125,7 @@ function epilogueUnit(b: Battle, u: Combatant, field: BattlefieldSpec | undefine
     const shield = u.energyShield && u.hp > 0 && u.status !== 'dead' && u.status !== 'fled' ? `Energy shield ${Math.round(u.energyShield.remaining)}/${displayNumber(energyShieldCapacity(u))}${u.energyShield.overloaded ? ` (${u.energyShield.overloaded} overloaded)` : ''}` : '';
     const wounded = u.recoverableWounded ? `${u.recoverableWounded} recoverable wounded` : '';
     const conditions = [...new Set(u.conditions.filter(c => c.dur > 0).map(c => /^[a-z-]+$/.test(c.id) ? c.id.replaceAll('-', ' ') : b.conditions.get(c.id)?.name ?? c.id))];
-    return `${side} ${u.name}${unitPlace(b,u,field,language)}: ${[strength, status, shield, wounded, ...conditions].filter(Boolean).join(', ')}`;
+    return `${side} ${battleUnitName(u, language)}${unitPlace(b,u,field,language)}: ${[strength, status, shield, wounded, ...conditions].filter(Boolean).join(', ')}`;
   }
   const statuses = {ready:'可行动',dying:'濒死',dead:u.scale==='hero'?'阵亡':'编队失去战斗力',routing:'溃退中',fled:'已撤离'};
   const conditions=[...new Set(u.conditions.filter(c=>c.dur>0).map(c=>b.conditions.get(c.id)?.name??c.id))];
@@ -136,7 +137,8 @@ function englishBattleStatus(b: Battle, protagonistId?: string, units = b.isOver
   const mass = b instanceof SmallBattle ? undefined : b;
   const field = small?.battlefield;
   const isOver = b.isOver();
-  const active = !isOver && small ? units.find(u => u.id === small.active?.id)?.name ?? 'Unlocated enemy' : undefined;
+  const acting = !isOver && small ? units.find(u => u.id === small.active?.id) : undefined;
+  const active = acting ? battleUnitName(acting, 'en') : small && !isOver ? 'Unlocated enemy' : undefined;
   const goal = field?.objective;
   const objective = !field || !goal ? '' : goal.kind === 'annihilation' ? 'Objective: Defeat the enemy forces'
     : goal.kind === 'control' ? `Objective: ${goal.attackingSide === 'enemy' ? 'Enemies' : 'Allies'} capture ${cellLabel(field, goal.cell)} (${small!.controlRounds[goal.attackingSide ?? 'ally']}/${goal.rounds} rounds)`

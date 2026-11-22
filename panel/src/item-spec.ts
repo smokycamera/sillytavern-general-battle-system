@@ -5,6 +5,7 @@ import { WEAPON_CLASSES, resolveWeaponClass, parseSkillMechanism, skillMechanism
   canonicalTraitId, TRAIT_LEVEL_ALIASES, type BodyKind, type ItemForm, type ItemSpecification } from '../../engine/src/index.js';
 import { normalizeNarrativeSkill, normalizeNarrativeSpec } from './spec-tolerance.js';
 import { splitSkillLevel } from './skill-notation.js';
+import { formatDisplayText } from '../../engine/src/display-text.js';
 
 export const ARMOR_TIERS = ['无甲', '轻甲', '中甲', '重甲', '超重甲'];
 const ENGLISH_ARMOR_TIERS = ['unarmored', 'light armor', 'medium armor', 'heavy armor', 'super-heavy armor'];
@@ -13,10 +14,11 @@ export function armorSpecificationTier(name: string): number {
   if (chinese >= 0) return chinese;
   return ENGLISH_ARMOR_TIERS.indexOf(name.toLowerCase().replace(/armour$/, 'armor'));
 }
-export function itemSpecificationLabel(spec: ItemSpecification): string {
-  if (spec.kind === 'item') return ITEM_FORM_NAMES[spec.form] + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses, barrierPower: spec.barrierPower });
+export function itemSpecificationLabel(spec: ItemSpecification, text = formatDisplayText): string {
+  if (spec.kind === 'item') return text(ITEM_FORM_NAMES[spec.form]) + '·' + itemSpecText({ version: 'items-v1', form: spec.form, power: spec.power, seed: '', active: spec.active, traits: spec.traits, bonuses: spec.bonuses, barrierPower: spec.barrierPower });
   const name = spec.kind === 'weapon' ? WEAPON_CLASSES[spec.mechanism]?.name ?? spec.mechanism : spec.kind === 'armor' ? ARMOR_TIERS[spec.tier] : SHIELD_CLASSES[spec.mechanism ?? 'shield'].name;
-  return `${name}L${spec.power}${enhancementLabel(spec.bonuses)}${spec.kind === 'weapon' && spec.enchantment && spec.enchantment !== 'none' ? ' · ' + (spec.enchantment === 'arcane' ? '奥术转化' : '热能转化') : ''}`;
+  return text('{kind}L{level}', { kind: text(name ?? ''), level: spec.power }) + enhancementLabel(spec.bonuses, text)
+    + (spec.kind === 'weapon' && spec.enchantment && spec.enchantment !== 'none' ? ' · ' + text(spec.enchantment === 'arcane' ? '奥术转化' : '热能转化') : '');
 }
 
 /** 名称只是显示前缀；只读取分隔符后明确写出的机制，不按名称猜装备。 */

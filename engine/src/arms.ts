@@ -127,13 +127,19 @@ export function armsStatusLabels(unit: Combatant, shield = true): string[] {
   return shield ? [...labels, ...shieldStatusLabels(unit)] : labels;
 }
 /** 单位详情的盾一行：类型与规格，再接挂背、覆盖、耐久或能量盾说明。 */
-export function shieldDetail(unit: Combatant): string {
-  const v2 = isArmsV2(unit.armsModel), kind = v2 ? shieldClass(unit) : 'shield', power = unit.shield!.recipe?.power ?? 3, head = SHIELD_CLASSES[kind].name + 'L' + power;
-  if (v2 && kind === 'energy-shield' && isArmsV3(unit.armsModel)) return [head, '每人一份' + displayNumber(energyShareOf(unit)) + '点，每次激活回充' + displayNumber(energyShieldRecharge(energyPower(unit))) + '点，单段均值不低于' + Number(energyThresholdOf(unit).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
-  if (v2 && kind === 'energy-shield') return [head, '每人一份' + displayNumber(energyShieldShare(power)) + '点，单段均值不低于' + Number(energyOverloadThreshold(power).toFixed(1)) + '的重击只能由被击中的份额抵挡', ...shieldStatusLabels(unit)].join(' · ');
-  if (v2 && unit.shieldDurability?.remaining === 0) return head + ' · 盾已碎';
-  if (v2 && !shieldUsable(unit)) return head + ' · 挂背（主武器双手）';
-  return [head, '覆盖' + Math.round(shieldCoverage(unit) * 100) + '%', ...shieldStatusLabels(unit)].join(' · ');
+export function shieldDetail(unit: Combatant, text = formatDisplayText): string {
+  const v2 = isArmsV2(unit.armsModel), kind = v2 ? shieldClass(unit) : 'shield', power = unit.shield!.recipe?.power ?? 3;
+  const head = text('{kind}L{level}', { kind: text(SHIELD_CLASSES[kind].name), level: power });
+  if (v2 && kind === 'energy-shield') {
+    const v3 = isArmsV3(unit.armsModel);
+    const share = displayNumber(v3 ? energyShareOf(unit) : energyShieldShare(power));
+    const threshold = Number((v3 ? energyThresholdOf(unit) : energyOverloadThreshold(power)).toFixed(1));
+    const recharge = v3 ? text('，每次激活回充{amount}点', { amount: displayNumber(energyShieldRecharge(energyPower(unit))) }) : '';
+    return [head, text('每人一份{share}点{recharge}，单段均值不低于{threshold}的重击只能由被击中的份额抵挡', { share, recharge, threshold }), ...shieldStatusLabels(unit, text)].join(' · ');
+  }
+  if (v2 && unit.shieldDurability?.remaining === 0) return head + ' · ' + text('盾已碎');
+  if (v2 && !shieldUsable(unit)) return head + ' · ' + text('挂背（主武器双手）');
+  return [head, text('覆盖{value}%', { value: Math.round(shieldCoverage(unit) * 100) }), ...shieldStatusLabels(unit, text)].join(' · ');
 }
 /** R1/R15/R20 盾的状态：挂背、耐久、碎盾、能量盾剩余与过载。 */
 export function shieldStatusLabels(unit: Combatant, text = formatDisplayText): string[] {

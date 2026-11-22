@@ -145,7 +145,7 @@ export function itemAbilityTemplate(id: string, power: number, bonuses: Enhancem
   else a.usesPerBattle = Math.max(1, chargedUses(a) + (bonuses?.uses ?? 0));
   if (form === 'single' && quickAbility(a)) { a.itemQuick = true; a.range = { min: 0, max: 1, metric: 'grid', allowEngaged: true, requiresLineOfSight: true }; }
   a.itemScaling = objectScaledAbility(a) ? 'object' : 'member';
-  a.desc = (form === 'single' ? (a.itemQuick ? '一次性：自身或相邻友军，可用加速动作' : '一次性：占主行动') : `充能：装备后每战${a.usesPerBattle}次，占主行动`)
+  a.desc = (form === 'single' ? (a.itemQuick ? '一次性：自身或相邻友军' : '一次性：占主行动') : `充能：装备后每战${a.usesPerBattle}次，占主行动`)
     + '；不耗精力；' + skillMechanismName(mechanism) + 'L' + power + enhancementLabel(bonuses) + (a.delivery === 'magic' ? '（魔法）' : '');
   return a;
 }

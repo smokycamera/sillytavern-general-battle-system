@@ -210,14 +210,22 @@ export function parseSkillMechanism(text: string): SkillMechanism | undefined {
   const parsed = parseSkillMechanismParts(text);
   return parsed?.mechanism && !parsed.dropped.length ? parsed.mechanism : undefined;
 }
-export function skillMechanismName(value: SkillMechanism | string): string {
+export function skillMechanismName(value: SkillMechanism | string, text?: (source: string) => string): string {
   const mechanism = typeof value === 'string' ? skillMechanismFromId(value) : value;
   if (!mechanism) return '';
-  return SKILL_CATEGORIES.find((c) => c.id === mechanism.category)!.name + (mechanism.categoryPower ? 'L' + mechanism.categoryPower : '')
-    + (mechanism.area && !mechanism.category.endsWith('area') ? '范围' : '')
+  const label = (name: string) => text?.(name) ?? name;
+  const category = SKILL_CATEGORIES.find(c => c.id === mechanism.category)!.name;
+  const categoryLabel = label(category);
+  const base = categoryLabel + (mechanism.categoryPower ? 'L' + mechanism.categoryPower : '') + (mechanism.area && !mechanism.category.endsWith('area') ? label('范围') : '');
+  const separator = categoryLabel === category || !mechanism.modifiers.length ? '' : ' ';
+  return base + separator
     // 自身位移写在最后，读作“物理单体近战+突进”；其余顺序不变，已有技能的显示名不受影响。
     + [...mechanism.modifiers].sort((a, b) => Number(MOVEMENT_MODIFIERS.includes(a)) - Number(MOVEMENT_MODIFIERS.includes(b)))
-      .map((id) => SKILL_MODIFIERS.find((m) => m.id === id)!.name + (mechanism.modifierPowers?.[id] ? 'L' + mechanism.modifierPowers[id] : '')).join('+');
+      .map(id => {
+        const effect = SKILL_MODIFIERS.find(m => m.id === id)!.name;
+        const power = mechanism.modifierPowers?.[id];
+        return label(effect) + (power ? 'L' + power : '');
+      }).join('+');
 }
 
 /** Per-effect L survives rebuilding, save validation, barrier attachment and battle upgrades. */

@@ -3,6 +3,7 @@ import { displayNumber } from './display-number.js';
 import {clampShieldDurability,clampEnergyShield} from './shield-state.js';
 import type {Combatant} from './types.js';
 import { capSingleLife } from './health-limits.js';
+import { formatDisplayText } from './display-text.js';
 
 /** 同生命成员合并存储，人数再大也不为每个成员创建运行对象。 */
 export interface MemberHealthGroup { hp:number; count:number }
@@ -133,8 +134,10 @@ export function healMemberGroups(unit:Combatant,amount:number):number {
   if(left&&wounded>full){const healed=Math.min(left,f.memberHp);groups.push({hp:healed,count:1});unit.hp++;unit.recoverableWounded!--;left-=healed;}
   f.members=unit.hp;f.health=mergeHealth(groups);return start-left;
 }
-export function memberHealthSummary(unit:Combatant,limit=6):string {
+export function memberHealthSummary(unit: Combatant, limit = 6, text = formatDisplayText): string {
   if(!hasMemberHealth(unit))return '';
   const groups=unit.formation?.health??[],shown=[...groups].reverse().slice(0,limit);
-  return shown.map(g=>`${g.count}${memberNoun(unit)} ${displayNumber(g.hp)}/${displayNumber(unit.formation!.memberHp)}生命`).join('；')+(groups.length>limit?`；另${groups.length-limit}组伤损`:'');
+  return shown.map(g => text('{count}{unit} {hp}/{max}生命', {
+    count: g.count, unit: text(memberNoun(unit)), hp: displayNumber(g.hp), max: displayNumber(unit.formation!.memberHp),
+  })).join(text('；')) + (groups.length > limit ? text('；另{count}组伤损', { count: groups.length - limit }) : '');
 }
