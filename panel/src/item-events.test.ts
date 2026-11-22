@@ -157,7 +157,7 @@ it('分配后跨回复仍可按原编号扣多个持有者，原份额耗尽、�
   expect(before.inventory!.filter(item => item.mechanics?.kind === 'item').reduce((sum, item) => sum + item.qty, 0)).toBe(4);
 });
 
-it('take 超出同源总量整批回滚，不扣同名的独立库存或已改造的拆分份额', () => {
+it('take 超出同源总量时扣完可用份额，保留同名的独立库存和已改造的拆分份额', () => {
   const save = initial(); save.inventory![0]!.qty = 4;
   save.narrativeIdState!.aliases.potion = 'c4';
   const give = proposal(save, '<give u2,u3 c4 qty2/>');
@@ -166,12 +166,18 @@ it('take 超出同源总量整批回滚，不扣同名的独立库存或已改�
   split = prepareInventoryTransaction(split, { kind: 'reforge', id: 'different-spec', expectedRevision: split.factRevision!, itemId: daughter.id, spec: { kind: 'item', form: 'single', power: 5, active: 'generic:buff:heal' } });
   split.inventory!.push({ ...structuredClone(save.inventory![0]!), id: 'independent', qty: 20 });
   const before = structuredClone(split);
-  const p = proposal(split, '<add item="整批不能留下"/><take c4 qty3/>');
+  const p = proposal(split, '<add item="同批新物品"/><take c4 qty3/>');
   p.value.sourceKey += ':later'; p.value.id += ':later';
-  expect(() => prepareNarrativeTransaction(split, p.value, p.ns, true)).toThrow(/数量/);
+  const next = prepareNarrativeTransaction(split, p.value, p.ns, true);
+  const remaining = next.inventory!.filter(item => item.mechanics?.kind === 'item' && item.qty > 0);
+  expect(remaining).toEqual(before.inventory!.filter(item => item.id === daughter.id || item.id === 'independent'));
+  expect(next.inventory!.some(item => item.name === '同批新物品')).toBe(true);
+  expect(next.proposals!.at(-1)!.notices).toContain('库存不足：c4 已移除 2/3 件');
   expect(split).toEqual(before);
   const over = proposal(save, '<give u2,u3 c4 qty2/><take c4 qty2/><take c4 qty3/>');
-  expect(() => prepareNarrativeTransaction(save, over.value, over.ns, true)).toThrow(/数量/);
+  const emptied = prepareNarrativeTransaction(save, over.value, over.ns, true);
+  expect(emptied.inventory!.filter(item => item.mechanics?.kind === 'item').every(item => item.qty === 0)).toBe(true);
+  expect(emptied.proposals!.at(-1)!.notices).toContain('库存不足：c4 已移除 2/3 件');
   expect(save.inventory![0]!.qty).toBe(4);
 });
 
