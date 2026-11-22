@@ -893,7 +893,7 @@ export function commitBattleOutcome(opts: {
     combatants,
   });
   if (inventory) {
-    const changed = new Set(combatants.filter(u=>u.equipmentBatches).map(u=>u.id));
+    const changed = new Set(combatants.filter(u => u.equipmentBatches || u.status === 'dead' && !u.recoverableWounded).map(u => u.id));
     for (const record of committed.records) if (changed.has(record.id) && record.equipmentManaged && record.snapshot) {
       projectEquipment(record,inventory);
       const index = committed.roster.findIndex(u=>u.id===record.id);

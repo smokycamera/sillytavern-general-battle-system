@@ -79,17 +79,28 @@ export function deleteFallenGear<T extends InventorySave>(save: T, ids: readonly
   return { ...save, fallenGear: remaining?.length ? remaining : undefined };
 }
 
-function rememberFallenGear(next: InventorySave, previous: InventoryItem[], fallen: ReadonlySet<string>, floor: number,
+function rememberFallenGear(next: InventorySave, previous: InventoryItem[], eligibleUnits: ReadonlySet<string>, floor: number,
   battleId?: string, broken = new Set<string>()): void {
-  const kept = new Set(next.inventory?.filter(item => item.qty > 0).map(item => item.id));
+  const kept = new Map(next.inventory?.map(item => [item.id, item.qty]));
   const saved = new Set(next.fallenGear?.map(entry => entry.item.id));
   const additions: FallenGear[] = [];
   for (const item of previous) {
-    if (item.qty <= 0 || !item.equippedTo || !fallen.has(item.equippedTo.unitId) || kept.has(item.id) || saved.has(item.id) || broken.has(item.id)
-      || !item.mechanics || item.mechanics.kind === 'item' || item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') continue;
+    if (!item.equippedTo || !eligibleUnits.has(item.equippedTo.unitId) || broken.has(item.id)
+      || !item.mechanics || item.mechanics.kind === 'item' || item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural'
+      || item.mechanics.kind === 'armor' && item.mechanics.value.tier === 0 && item.name === '无甲') continue;
+    const qty = item.qty - (kept.get(item.id) ?? 0);
+    if (qty <= 0) continue;
     const { equippedTo, assignedTo, publicIssueId, history, ...equipment } = item;
-    additions.push({ storedAt: floor, expiresAt: floor + (next.fallenGearFloors ?? FALLEN_GEAR_FLOORS), battleId, item: structuredClone(equipment) });
-    saved.add(item.id);
+    // The surviving holding retains its ID. The lost share is a distinct holding of the same lot.
+    let part: InventoryItem;
+    if (kept.has(item.id) || saved.has(item.id)) {
+      const base = `fallen:${battleId ?? 'removed'}:${item.id}`;
+      let id = base;
+      for (let suffix = 2; kept.has(id) || saved.has(id); suffix++) id = base + ':' + suffix;
+      part = splitInventoryBatch(equipment, id, qty);
+    } else part = structuredClone(equipment);
+    additions.push({ storedAt: floor, expiresAt: floor + (next.fallenGearFloors ?? FALLEN_GEAR_FLOORS), battleId, item: part });
+    saved.add(part.id);
   }
   if (additions.length) next.fallenGear = [...next.fallenGear ?? [], ...additions];
 }
@@ -99,13 +110,18 @@ export function stashBattleFallenGear(before: InventorySave, next: InventorySave
   const battle = next.battle;
   if (!battle || !Array.isArray(battle.snap.combatants)) return;
   const battleId = `${battle.kind}:${String(battle.snap.seed)}`;
-  if (before.committedOutcomeIds?.includes(battleId) || !next.committedOutcomeIds?.includes(battleId)) return;
+  if (before.committedOutcomeIds?.includes(battleId) || !next.committedOutcomeIds?.includes(battleId)
+    || next.fallenGear?.some(entry => entry.battleId === battleId)) return;
   const combatants = battle.snap.combatants as Combatant[];
   const participants = new Set(combatants.map(u => u.transportOrigin ?? u.id));
-  const fallen = new Set(next.storage?.filter(r => participants.has(r.id) && r.status === 'dead' && !r.recoverableWounded).map(r => r.id));
-  if (!fallen.size) return;
-  const broken = new Set(combatants.filter(u => isArmsV2(u.armsModel) && u.shield && u.shieldDurability?.remaining === 0).map(u => u.shield!.id));
-  rememberFallenGear(next, before.inventory ?? [], fallen, floor, battleId, broken);
+  const broken = new Set<string>();
+  for (const unit of combatants) {
+    if (isArmsV2(unit.armsModel) && unit.shield && unit.shieldDurability?.remaining === 0) broken.add(unit.shield.id);
+    for (const batch of unit.equipmentBatches ?? []) {
+      if (batch.mechanics.kind === 'shield' && batch.shieldDurability?.remaining === 0) broken.add(batch.id);
+    }
+  }
+  rememberFallenGear(next, before.inventory ?? [], participants, floor, battleId, broken);
 }
 
 export type InventoryAction =
@@ -506,13 +522,15 @@ export function settleBattleEquipment(units: Combatant[], items: InventoryItem[]
   for (const u of broken) delete u.shield;
   const combatants = reuniteTransportGroups(units);
   if (!items) return {combatants,inventory:undefined,brokenShieldNotes};
-  const fallen = new Set(combatants.filter(u => u.equipmentBatches && u.status === 'dead' && !u.recoverableWounded).map(u => u.id));
+  const fallen = new Set(combatants.filter(u => u.status === 'dead' && !u.recoverableWounded).map(u => u.id));
+  const fallenBatchOwners = new Set(combatants.filter(u => u.equipmentBatches && fallen.has(u.id)).map(u => u.id));
   const inventory = clone(items).filter(item => {
     if (held.has(item.id)) {
       item.qty = held.get(item.id)!;
       return item.qty > 0;
     }
-    return !brokenIds.has(item.id) && !(item.assignedTo && fallen.has(item.assignedTo));
+    return !brokenIds.has(item.id) && !(item.assignedTo && fallenBatchOwners.has(item.assignedTo))
+      && !(item.equippedTo && fallen.has(item.equippedTo.unitId) && item.mechanics && item.mechanics.kind !== 'item');
   });
   return {combatants,inventory,brokenShieldNotes};
 }

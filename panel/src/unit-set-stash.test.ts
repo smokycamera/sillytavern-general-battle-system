@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateUnit, traitRegistry } from '../../engine/src/index.js';
-import { unitRecordFromCombatant } from './unit-state.js';
+import { generateUnit, MassBattle, SmallBattle, setStrength, traitRegistry, V45_OVERFLOW_D20, V45_OVERFLOW_TW } from '../../engine/src/index.js';
+import { loseIssuedEquipment } from '../../engine/src/equipment-batches.js';
+import { commitBattleOutcome, unitRecordFromCombatant } from './unit-state.js';
 import { createInventoryItem, deleteUnitArchive, FALLEN_GEAR_FLOORS, prepareInventoryState, setFallenGearFloors, splitInventoryBatch, stashBattleFallenGear, type InventoryItem } from './inventory-state.js';
 import { narrativeIds } from './narrative-ids.js';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
@@ -78,6 +79,59 @@ it('stashes only actual removed gear of a fallen participant once per battle out
   expect(next.fallenGear).toMatchObject([{battleId:'small:fallen',expiresAt:4+FALLEN_GEAR_FLOORS,item:{id:armor.id,mechanics:armor.mechanics}}]);
   expect(next.fallenGear![0]!.item.equippedTo).toBeUndefined();
   expect(next.inventory).toEqual([]);
+});
+
+it.each(['small', 'mass'] as const)('persists the lost share of mixed equipment after %s battle while its company survives', async kind => {
+  const f = nativeFixture();
+  try {
+    await f.service.start();
+    const deployed = transact({}, '<spawn name="守军" side="ally" scale="company" hpMax="30" weapon="长矛:长兵器L3×10,旧剑:剑L2×20" armor="锁甲:中甲L2×30" shield="铁盾:中盾L2×30"/>');
+    // Older individual gear can be a physical holding without a batch.
+    const old = setup('enemy');
+    const opening = { ...deployed, storage: [...deployed.storage!, ...old.storage!], inventory: [...deployed.inventory!, ...old.inventory!] };
+    const combatants = structuredClone(opening.storage!.map(record => record.snapshot!));
+    const battle = kind === 'small'
+      ? new SmallBattle({ combatants, rules: V45_OVERFLOW_D20, seed: 'mixed-casualties' })
+      : new MassBattle({ combatants, rules: V45_OVERFLOW_TW, formationSlots: 3, seed: 'mixed-casualties' });
+    battle.start();
+    const initial = { ...opening, battle: { kind, snap: battle.toSnapshot() } };
+    expect((await f.service.transact(() => initial)).status).toBe('confirmed');
+    const before = f.service.snapshot(), company = battle.combatants.find(unit => unit.scale === 'company')!, hero = battle.combatants.find(unit => unit.scale === 'hero')!;
+    const wounded = kind === 'mass' ? 2 : 0;
+    if (kind === 'small') loseIssuedEquipment(company, 26, 4);
+    setStrength(company, 4);
+    company.recoverableWounded = wounded;
+    company.shieldDurability = { remaining: 0 };
+    setStrength(hero, 0);
+    hero.status = 'dead';
+    battle.finishBattle('ceasefire');
+    const id = `${kind}:mixed-casualties`;
+    const settled = commitBattleOutcome({ battleId: id, committedIds: [], records: before.storage!, roster: combatants,
+      combatants: battle.combatants, inventory: before.inventory, awards: [], registry: reg });
+    const settledSave = { ...before, storage: settled.records, inventory: settled.inventory, committedOutcomeIds: settled.committedIds,
+      battle: { kind, snap: battle.toSnapshot() } };
+    expect((await f.service.persistPanel(settledSave, before.factRevision ?? 0)).status).toBe('confirmed');
+    await f.service.load();
+    const after = f.service.snapshot(), companyInventory = after.inventory!.filter(item => item.assignedTo === company.id);
+    expect(companyInventory.map(item => [item.name, item.qty])).toEqual([['长矛', 4 + wounded], ['锁甲', 4 + wounded]]);
+    expect(after.fallenGear?.map(entry => [entry.item.name, entry.item.qty])).toEqual([['长矛', 6 - wounded], ['旧剑', 20], ['锁甲', 26 - wounded], ['长剑', 1]]);
+    expect(after.storage!.find(record => record.id === company.id)).toMatchObject({ hp: 4, recoverableWounded: wounded });
+    const spear = companyInventory.find(item => item.name === '长矛')!, lost = after.fallenGear!.find(entry => entry.item.name === spear.name)!.item;
+    expect(lost).toMatchObject({ sourceItemId: spear.id, mechanics: { value: { ...spear.mechanics!.value, id: lost.id } } });
+    expect(lost.id).not.toBe(spear.id);
+    const vault = f.service.snapshot(['fallenGear', 'narrativeIdState']);
+    expect(narrativeIds(after).realId(narrativeIds(vault).publicId(lost.id))).toBe(lost.id);
+    const afterTake = transact(after, `<take id="${narrativeIds(after).publicId(spear.id)}" qty="11"/>`, 'take-after-battle');
+    expect(named(afterTake, spear.name)).toHaveLength(0);
+    expect(afterTake.fallenGear?.some(entry => entry.item.id === lost.id)).toBe(false);
+    expect(notices(afterTake)).toContain('已移除 10/11 件');
+    const reissued = transact(after, `<unit_set id="${narrativeIds(after).publicId(company.id)}" weapon="长矛:长兵器L3×10"/>`, 'reissue-after-battle');
+    expect(named(reissued, spear.name).filter(item => item.equippedTo?.unitId === company.id).reduce((sum, item) => sum + item.qty, 0)).toBe(10);
+    expect(reissued.fallenGear?.some(entry => entry.item.id === lost.id)).toBe(false);
+
+    expect((await f.service.persistPanel(after, after.factRevision ?? 0)).status).toBe('confirmed');
+    expect(f.service.snapshot().fallenGear).toEqual(after.fallenGear);
+  } finally { f.service.dispose(); }
 });
 
 it('takes only what exists across equipped and hidden copies of the same lot', () => {
