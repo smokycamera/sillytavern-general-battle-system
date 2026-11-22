@@ -434,22 +434,29 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   const given = new Set<string>(), handed = new Set<string>();
   const deferredEquipment = new Map<string, Record<string, unknown>>();
   const incomingEquipment = new Map<string, InventoryItem[]>();
-  for (const event of proposal.events) if (event.kind === 'give') {
-    const item = preparedSave.inventory?.find(item => item.id === event.id);
-    if (item) for (const unitId of event.to ?? []) incomingEquipment.set(unitId, [...incomingEquipment.get(unitId) ?? [], item]);
+  const stockEquipment: NonNullable<UnitSetContext['stockEquipment']> = [];
+  for (const event of proposal.events) if (event.kind === 'give' || event.kind === 'take' || event.kind === 'add' && event.id) {
+    const item = preparedSave.inventory?.find(item => item.id === event.id)
+      ?? (event.kind === 'take' ? preparedSave.fallenGear?.find(entry => entry.item.id === event.id)?.item : undefined);
+    if (!item || item.mechanics?.kind === 'item') continue;
+    const recipients = event.kind === 'give' ? event.to : undefined;
+    stockEquipment.push({ item, recipients });
+    if (event.kind === 'give') for (const unitId of event.to ?? []) {
+      incomingEquipment.set(unitId, [...incomingEquipment.get(unitId) ?? [], item]);
+    }
   }
   const reforgedNames = new Map(proposal.events.flatMap(event => event.kind === 'reforge' && event.name ? [[event.id, event.name] as const] : []));
   const reforgeIds = new Set(proposal.events.flatMap(event => event.kind === 'reforge' ? [event.id] : []));
-  const stockTransaction = proposal.events.some(e => e.kind === 'give' || e.kind === 'take' || e.kind === 'add');
-  const unitSetContext: UnitSetContext = { stockTransaction, given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames,
+  const unitSetContext: UnitSetContext = { stockEquipment, given, notices, deferredEquipment, deferEquipmentFor: incomingEquipment, reforgedNames,
     reforgedEquipment: preparedSave.inventory?.filter(item => reforgeIds.has(item.id)) };
   const directGives = new Map<string, string>();
   for (const [index, event] of proposal.events.entries()) {
     if (event.kind !== 'add' || event.item === undefined) continue;
     const id = `loot-${proposal.id}-${index}`;
     if (event.to) directGives.set(id,event.to);
-    const item = event.spec ? createInventoryItem(id,event.item,event.spec,id,event.qty)
+    const item: InventoryItem = event.spec ? createInventoryItem(id,event.item,event.spec,id,event.qty)
       : {id,name:event.item,qty:event.qty,lootType:event.lootType};
+    if (item.mechanics?.kind !== 'item') stockEquipment.push({ item, recipients: event.to ? [event.to] : undefined });
     next.inventory!.push({...item,note:event.note,...(event.to && next.storage?.some(r => r.id === event.to) ? {assignedTo:event.to} : {})});
     if (!event.spec || event.spec.kind !== 'item' || event.spec.form !== 'single') given.add(id);
     handed.add(id);
@@ -557,7 +564,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     if (event.kind === 'take' && givenStacks.has(event.id)) take(event, index);
   }
   for (const [unitId, patch] of deferredEquipment) {
-    next = applyUnitSet(next, unitId, patch, proposal.id, { stockTransaction, given, notices, transferred });
+    next = applyUnitSet(next, unitId, patch, proposal.id, { stockEquipment, given, notices, transferred, reforgedNames });
   }
   // unit_set 的 items 最后交出：此时同一回复 add 的已入库，新建单位也已建档。
   const handovers: HandOver[] = [...proposal.events.entries()].flatMap(([index, event]) => event.kind === 'unit-set' && event.items?.length ? [{ unitId: event.id, items: event.items, index }] : []);

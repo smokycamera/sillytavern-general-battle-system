@@ -29,7 +29,7 @@ export function parseIssue(text: unknown, slot: EquipmentSlot, attrs: Record<str
 
 /** Check the entire slot before unequipping. Hidden loot is only used for the remaining deficit. */
 export function planEquipmentIssue(inventory: InventoryItem[], unitId: string, slot: EquipmentSlot,
-  entries: EquipmentIssue[], includesSidearm: boolean, fallen: readonly InventoryItem[] = []) {
+  entries: EquipmentIssue[], includesSidearm: boolean, fallen: readonly InventoryItem[], stockOnly: ReadonlySet<EquipmentIssue>) {
   const known = new Set(inventory.map(item => item.id));
   const loot = fallen.filter(item => !known.has(item.id));
   const sources = [...inventory, ...loot];
@@ -48,14 +48,14 @@ export function planEquipmentIssue(inventory: InventoryItem[], unitId: string, s
       available.set(item.id,left-used); needed -= used;
       if (used && hidden.has(item)) claimed.set(item, (claimed.get(item) ?? 0) + used);
     }
-    if (needed && !shortage) shortage = '「'+entry.name+'」需要'+entry.qty+'件，本队与公共库存合计可用'+(entry.qty-needed)+'件';
+    if (needed && stockOnly.has(entry) && !shortage) shortage = '「'+entry.name+'」需要'+entry.qty+'件，本队、公共库存和战利品库合计可用'+(entry.qty-needed)+'件';
   }
   return { shortage, claimed };
 }
 
 /** Keep the original roll when a batch is reissued, including partial transfers. */
 export function assignIssue(inventory: InventoryItem[], unitId: string, side: string, slot: EquipmentSlot,
-  entries: EquipmentIssue[], source: string, allowStash = true, defaultBody?: BodyKind, allowCreation = true): void {
+  entries: EquipmentIssue[], source: string, allowStash = true, defaultBody?: BodyKind, stockOnly?: ReadonlySet<EquipmentIssue>): void {
   const previous = inventory.filter(i => i.equippedTo?.unitId === unitId && i.equippedTo.slot === slot);
   for (const item of previous) delete item.equippedTo;
   const candidates = [...previous,...inventory.filter(i => !previous.includes(i) && !i.equippedTo &&
@@ -74,7 +74,7 @@ export function assignIssue(inventory: InventoryItem[], unitId: string, side: st
       equipped.batch = true; equipped.assignedTo = unitId;
       equipped.equippedTo = {unitId,slot}; needed -= moved;
     }
-    if (needed && !allowCreation) throw Error('「'+entry.name+'」的可配发数量不足，请核对实物');
+    if (needed && stockOnly?.has(entry)) throw Error('「'+entry.name+'」的可配发数量不足，请核对实物');
     if (needed && issued) issued.qty += needed;
     else if (needed) {
       const id = source+':'+unitId+':'+slot+':'+index;

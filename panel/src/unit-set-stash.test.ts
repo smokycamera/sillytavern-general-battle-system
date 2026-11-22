@@ -180,6 +180,40 @@ it('adjusts old vault entries from their original floor without reviving expired
   expect(save.fallenGear).toHaveLength(2);
 });
 
+it('applies the 59-member standalone loadout, using partial loot before creating the remaining equipment', () => {
+  const opening = transact({}, '<spawn name="北境流民辅兵队" side="ally" scale="company" hp="30" hpMax="60" weapon="制式白蜡木长矛:长兵器L2×30,轻弩:弩L2×30" armor="半旧锁甲衫:中甲L2×3,褪色镶铁皮甲:轻甲L2×27" shield="包铁圆木盾:小盾L2×30"/>'
+    + '<spawn name="旧锁甲原主" side="enemy" scale="company" hpMax="5" armor="半旧锁甲衫:中甲L2×5"/>', 'opening');
+  const [company, enemy] = opening.storage!;
+  const save = deleteUnitArchive(opening, enemy!.id, 0);
+  save.narrativeIdState!.aliases[company!.id] = 'u15';
+  const next = transact(save, '<recover id="u15" life="all"/><unit_set id="u15" hp="59" morale="60" weapon="制式白蜡木长矛:长兵器L2×59,轻弩:弩L2×59" armor="半旧锁甲衫:中甲L2×11,褪色镶铁皮甲:轻甲L2×48" shield="包铁圆木盾:小盾L2×59"/>');
+  expect(next.storage!.find(record => record.id === company!.id)).toMatchObject({ hp: 59, morale: 60 });
+  const equipped = next.inventory!.filter(item => item.equippedTo?.unitId === company!.id);
+  const quantity = (name: string) => equipped.filter(item => item.name === name).reduce((sum, item) => sum + item.qty, 0);
+  for (const [name, qty] of [['制式白蜡木长矛', 59], ['轻弩', 59], ['半旧锁甲衫', 11], ['褪色镶铁皮甲', 48], ['包铁圆木盾', 59]] as const) {
+    expect(quantity(name)).toBe(qty);
+  }
+  expect(notices(next)).toContain('从暂存装备领取「半旧锁甲衫」×5');
+  expect(next.fallenGear?.some(entry => entry.item.name === '半旧锁甲衫')).toBeFalsy();
+});
+
+it('uses stock limits only for the equipment involved in the same narrative transaction', () => {
+  const save = transact({}, '<spawn name="辅兵" side="ally" scale="company" hpMax="6" weapon="旧剑:剑L2×6"/><add item="旧斧" spec="斧L2" qty="3"/>', 'opening');
+  const ids = narrativeIds(save), axe = named(save, '旧斧')[0]!;
+  const company = save.storage![0]!.id, unit = ids.publicId(company);
+  const patch = `<unit_set id="${unit}" weapon="长矛:长兵器L2×6,轻弩:弩L2×6"/>`;
+  const transactions = `<take id="${ids.publicId(axe.id)}" qty="2"/><add item="口粮"/><add item="备用剑" spec="剑L2"/>`;
+  const short = transact(save, transactions + '<add item="长矛" spec="长兵器L2" qty="2"/>' + patch);
+  expect(named(short, '旧剑')[0]).toMatchObject({ qty: 6, equippedTo: { unitId: company, slot: 'primary' } });
+  expect(named(short, '长矛')[0]).toMatchObject({ qty: 2 });
+  expect(notices(short)).toContain('「长矛」需要6件');
+  const enough = transact(save, transactions + '<add item="长矛" spec="长兵器L2" qty="6"/>' + patch);
+  expect(named(enough, '长矛')).toEqual([expect.objectContaining({ id: expect.stringMatching(/^loot-/), qty: 6, equippedTo: { unitId: company, slot: 'primary' } })]);
+  expect(named(enough, '轻弩')[0]).toMatchObject({ qty: 6, equippedTo: { unitId: company, slot: 'primary' } });
+  expect(named(enough, '旧斧')[0]?.qty).toBe(1);
+  expect(named(enough, '备用剑')[0]?.qty).toBe(1);
+});
+
 describe('unit_set 换装与库存同一件实物', () => {
   it.each(['equipped', 'bag', 'public'] as const)('重铸改名并换回原实物，保留奥术与冻结种子、不复制当前武器：%s', location => {
     const sword = createInventoryItem('rebellion', '叛逆大剑', { kind: 'weapon', mechanism: 'greatsword', power: 3, enchantment: 'arcane' }, 'rebellion-original');
