@@ -27,21 +27,30 @@ export function parseIssue(text: unknown, slot: EquipmentSlot, attrs: Record<str
   });
 }
 
-/** Check the entire slot before unequipping. Repeated rows share the same physical stock. */
-export function issueShortage(inventory: InventoryItem[], unitId: string, slot: EquipmentSlot,
-  entries: EquipmentIssue[], includesSidearm: boolean): string | undefined {
-  const available = new Map(inventory.map(item => [item.id,item.qty]));
+/** Check the entire slot before unequipping. Hidden loot is only used for the remaining deficit. */
+export function planEquipmentIssue(inventory: InventoryItem[], unitId: string, slot: EquipmentSlot,
+  entries: EquipmentIssue[], includesSidearm: boolean, fallen: readonly InventoryItem[] = []) {
+  const known = new Set(inventory.map(item => item.id));
+  const loot = fallen.filter(item => !known.has(item.id));
+  const sources = [...inventory, ...loot];
+  const available = new Map(sources.map(item => [item.id, item.qty]));
+  const claimed = new Map<InventoryItem, number>();
+  const hidden = new Set(loot);
+  let shortage: string | undefined;
   for (const entry of entries) {
-    const named = inventory.filter(item => item.name === entry.name);
     let needed = entry.qty;
-    for (const item of named) {
+    for (const item of sources) {
+      if (needed === 0) break;
+      if (item.name !== entry.name) continue;
       if (item.assignedTo && item.assignedTo !== unitId || item.equippedTo && item.equippedTo.slot !== slot
         && !(includesSidearm && item.equippedTo.slot === 'sidearm') || !sameGear(item.mechanics,entry.spec)) continue;
       const left = available.get(item.id)!, used = Math.min(needed,left);
       available.set(item.id,left-used); needed -= used;
+      if (used && hidden.has(item)) claimed.set(item, (claimed.get(item) ?? 0) + used);
     }
-    if (needed) return '「'+entry.name+'」需要'+entry.qty+'件，本队与公共库存合计可用'+(entry.qty-needed)+'件';
+    if (needed && !shortage) shortage = '「'+entry.name+'」需要'+entry.qty+'件，本队与公共库存合计可用'+(entry.qty-needed)+'件';
   }
+  return { shortage, claimed };
 }
 
 /** Keep the original roll when a batch is reissued, including partial transfers. */

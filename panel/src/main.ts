@@ -115,7 +115,7 @@ import { createPanelRuntime } from './panel-runtime.js';
 import { type LootType, type Suggestion } from './tags.js';
 import { migrateSavedSuggestion } from './saved-suggestion.js';
 import type { NarrativeProposal, NarrativeSave } from './narrative-state.js';
-import { prepareInventoryState, type InventoryItem } from './inventory-state.js';
+import { FALLEN_GEAR_FLOORS, prepareInventoryState, type InventoryItem } from './inventory-state.js';
 import { prepareBattleItems } from './battle-items.js';
 import { rideEditor, rideEditAction } from './ride-editor.js';
 import { platformUnits } from './platform-records.js';
@@ -158,7 +158,7 @@ setLlmWorldbookSource(runtime.worldbooks);
 const llmWorldbookPicker = new LlmWorldbookPicker(runtime.worldbooks, () => render('view'));
 document.body.dataset.native = String(!!runtime.native);
 if (runtime.getTheme) document.body.dataset.theme = runtime.getTheme();
-const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord);
+const inventoryPanel = new InventoryPanel(controller, visibleUnitRecord, runtime.lootVault);
 if (!resident) window.addEventListener('pagehide', event => { if (!event.persisted) controller.dispose(); });
 const reg = traitRegistry();
 const MAP_ZOOM_KEY = 'tavern-battle:map-zoom';
@@ -1759,7 +1759,10 @@ function renderManage(): string {
         ${woundedLabel(r) || r.retired ? `<span class="sub">${esc(woundedLabel(r, false, ui))}${r.retired ? ' · ' + ui('已解散') : ''}</span>` : ''}
         <button data-action="storage-into" data-id="${esc(r.id)}" ${deployed || r.retired || r.hp <= 0 || r.status === 'dying' ? 'disabled' : ''} title="${ui("加入本场参战队伍")}">${ui(deployed ? '已参战' : '→参战队伍')}</button>
         <button data-action="storage-recover" data-id="${esc(r.id)}" ${currentBattle() || r.retired || r.status === 'dead' ? 'disabled' : ''} title="${ui("收兵后治疗可恢复的生命或伤兵、恢复士气并解除濒死；不补回永久阵亡人数")}">${ui("战后恢复")}</button>
-        <button data-action="storage-del" data-id="${esc(r.id)}" class="danger" title="${ui("删除档案及参战引用，同时删除已装备的主武器、副武器、护甲和盾牌")}">${ui("直接删除（含已装备）")}</button>
+        <button data-action="storage-del" data-id="${esc(r.id)}" class="danger" title="${runtime.native
+          ? ui('删除档案。可回收装备在后台暂留{count}层消息，供剧情配发。', { count: saved.fallenGearFloors ?? FALLEN_GEAR_FLOORS })
+          : ui('删除档案及参战引用，同时删除已装备的主武器、副武器、护甲和盾牌')}">${ui(runtime.native
+          ? '删除档案（装备暂留）' : '直接删除（含已装备）')}</button>
       </div>`;
     if (!editing) return line;
     if (r.snapshot?.rulesVersion === 'v2' && builderEditDraft) return `${line}<div class="manage-edit">${unitForm('edit', builderEditDraft, reg, { editing: true, managed: r.equipmentManaged })}<div class="row"><button class="primary" data-action="storage-preview" data-id="${esc(r.id)}">${ui("预览修改")}</button><button data-action="manage-cancel-edit">${ui("取消编辑")}</button></div>${builderPreview?.record?.id === r.id ? buildPreview(builderPreview.unit, r.snapshot) : ''}</div>`;
@@ -2448,7 +2451,12 @@ function renderNarrativeProposals(): string {
   const history = state.proposals.filter((p) => ['committed', 'rejected'].includes(p.status)).slice(-12).reverse();
   const proposal = (p: NarrativeProposal) => `<div class="narrative-proposal" data-proposal="${esc(p.id)}"><span class="tag">${labels[p.status]}</span>
     <p>${p.events.map((e) => esc(suggestionDesc(e, p.events))).join('；')}</p>${p.corrected ? `<p class="sub">${ui("仅修改本地草稿。")}</p>` : ''}${p.reason ? '<p class="grid-reason">' + esc(p.reason) + '</p>' : ''}
-    ${p.notices?.length ? `<details><summary>${ui("识别与格式整理说明")}</summary><p class="sub">` + p.notices.map(esc).join('；') + '</p></details>' : ''}
+    ${p.notices?.length ? `<details><summary>${ui("识别与格式整理说明")}</summary><p class="sub">` + p.notices.map(notice => {
+      const removal = /^库存不足：(.+) 已移除 (\d+)\/(\d+) 件$/.exec(notice);
+      if (!removal) return esc(notice);
+      const [, id = '', taken = '', requested = ''] = removal;
+      return esc(ui('库存不足：{id} 已移除 {taken}/{requested} 件', { id, taken, requested }));
+    }).join('；') + '</p></details>' : ''}
     <div class="row">${['pending', 'failed'].includes(p.status) ? '<button class="primary" data-action="narrative-approve" data-id="' + esc(p.id) + '">' + (p.events.some((e) => e.kind === 'spawn' || e.kind === 'deploy') ? '确认入库并上场' : '确认本批变更') + '</button>' : ''}
     ${needsNarrativeDeploymentRestore({ proposals: state.proposals, storage: state.storage, rosterIds: state.roster.map((u) => u.id) }, p.id) ? '<button class="primary" data-action="narrative-restore-roster" data-id="' + esc(p.id) + `">${ui("恢复本批参战单位")}</button>` : ''}
     ${['legacy', 'stale'].includes(p.status) ? '<button data-action="narrative-rebind" data-id="' + esc(p.id) + `">${ui("重新预览")}</button>` : ''}
@@ -4151,6 +4159,10 @@ async function afterSmallAction(endTurn = true): Promise<void> {
 document.addEventListener('click', e => {
   const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')?.dataset.action;
   if (!action) return;
+  if (action === 'inventory-loot-open' || action === 'inventory-loot-close') {
+    void inventoryPanel.handleAction((e.target as HTMLElement).closest<HTMLElement>('[data-action]')!);
+    return;
+  }
   if (['workspace-tab', 'plugin-toggle', 'language-toggle', 'theme-toggle', 'grid-pan', 'grid-focus', 'grid-zoom', 'grid-overview', 'modal-stop', 'llm-stop', 'llm-command-stop', 'llm-notes', 'llm-notes-close', 'letter-open', 'letter-close', 'llm-models', 'ai-scan', 'ai-scan-confirm', 'ai-scan-cancel', 'narrative-error', 'narrative-recognized'].includes(action) || action.startsWith('worldbook-')) { void handleAction(e); return; }
   if (MAP_INSPECTION.includes(action)) {
     if (uiBusy) { toast('正在保存上一项操作，请稍候…'); return; }

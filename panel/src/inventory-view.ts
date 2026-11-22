@@ -26,10 +26,12 @@ import { ARMOR_TIERS } from './item-spec.js';
 import { equipmentReason, effectiveProtection, abilityUsabilityReason, traitRegistry, WEAPON_CLASSES, type BodyKind, type ItemSpecification } from '../../engine/src/index.js';
 import { materializeUnitRecord, type UnitRecord } from './unit-state.js';
 import {anchoredWeapon,anchoredWeaponLabel,anchoredProtection,armorEffectLabel,shieldProtection,weaponAverageDamage} from '../../engine/src/power-anchors.js';
-import { prepareInventoryState, outOfBattleUse, type InventoryAction, type InventoryItem, type InventorySave } from './inventory-state.js';
+import { FALLEN_GEAR_FLOORS, prepareInventoryState, outOfBattleUse, type InventoryAction, type InventoryItem, type InventorySave } from './inventory-state.js';
 import type { InventoryPreview } from './narrative-controller.js';
 import type { PanelController } from './controller-port.js';
 import { narrativeIds } from './narrative-ids.js';
+import { storyEquipmentSpec, storyFields } from './story-spec.js';
+import type { LootVaultAccess } from './panel-runtime.js';
 
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const slotNames = { primary: '武器', sidearm: '武器', armor: '护甲', shield: '盾牌', gear: '佩戴' };
@@ -199,7 +201,12 @@ export class InventoryPanel {
   private error?: string;
   private selectedUnit: string | undefined;
   private context = '';
-  constructor(private controller: PanelController, private canView: (record: UnitRecord) => boolean = () => true) {}
+  private lootOpen = false;
+  private lootSelection = new Set<string>();
+  private lootRetentionDraft?: string;
+  private lootStatus?: string;
+  constructor(private controller: PanelController, private canView: (record: UnitRecord) => boolean = () => true,
+    private loot?: LootVaultAccess) {}
   private view(): InventorySave {
     const save = prepareInventoryState(this.controller.snapshot());
     const storage = save.storage?.filter(this.canView);
@@ -223,12 +230,20 @@ export class InventoryPanel {
     }
   }
   capture(target?: Element): void {
+    if (target instanceof HTMLInputElement && target.dataset.role === 'inventory-loot-floors') this.lootRetentionDraft = target.value;
     if (!this.draft || target && !target.closest('#inventory-panel')) return;
     Object.assign(this.draft, captureEquipment('inventory', this.draft));
     const quantity = document.querySelector<HTMLInputElement>('[data-role="inventory-qty"]'); if (quantity) this.draft.qty = quantity.value;
   }
   handleChange(target: Element): boolean {
     if (!target.closest('#inventory-panel')) return false;
+    if (target instanceof HTMLInputElement && target.dataset.role === 'inventory-loot-select') {
+      const id = target.dataset.item!;
+      if (target.checked) this.lootSelection.add(id); else this.lootSelection.delete(id);
+      this.draw();
+      document.querySelector<HTMLInputElement>(`[data-role="inventory-loot-select"][data-item="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+      return true;
+    }
     if ((target as HTMLElement).dataset.role === 'inventory-select') {
       const input = target as HTMLInputElement;
       const item = this.currentItems(this.view()).find(item => item.id === input.dataset.item);
@@ -281,6 +296,7 @@ export class InventoryPanel {
     const action = element.dataset.action ?? '';
     if (!action.startsWith('inventory-')) return false;
     if (this.committing || element instanceof HTMLButtonElement && element.disabled) return true;
+    if (action.startsWith('inventory-loot-')) { await this.handleLootAction(element); return true; }
     const actionContext = this.controller.inventoryContext();
     this.capture(); this.error = undefined;
     try {
@@ -348,9 +364,81 @@ export class InventoryPanel {
     if (this.preview || this.error) document.querySelector('[data-role="inventory-feedback"]')?.scrollIntoView({ block: 'nearest' });
     return true;
   }
+  private async handleLootAction(element: HTMLElement): Promise<void> {
+    if (!this.loot) return;
+    const action = element.dataset.action;
+    if (action === 'inventory-loot-open' || action === 'inventory-loot-close') {
+      this.lootOpen = action === 'inventory-loot-open';
+      this.lootStatus = undefined;
+      this.lootSelection.clear();
+      this.lootRetentionDraft = undefined;
+      this.draw();
+      document.querySelector<HTMLButtonElement>(`[data-action="inventory-loot-${this.lootOpen ? 'close' : 'open'}"]`)?.focus({ preventScroll: true });
+      return;
+    }
+    if (!this.lootOpen || action !== 'inventory-loot-send' && action !== 'inventory-loot-delete' && action !== 'inventory-loot-retention') return;
+    const context = this.controller.inventoryContext();
+    const floors = this.lootRetentionDraft ?? document.querySelector<HTMLInputElement>('[data-role="inventory-loot-floors"]')?.value;
+    this.committing = true;
+    this.lootStatus = undefined;
+    this.draw();
+    try {
+      const save = this.controller.snapshot(['fallenGear', 'narrativeIdState']);
+      const floor = this.loot.floor();
+      const selected = (save.fallenGear ?? []).filter(entry => entry.expiresAt > floor && this.lootSelection.has(entry.item.id));
+      if (action === 'inventory-loot-send') {
+        if (!selected.length) return;
+        const { publicId } = narrativeIds(save);
+        const text = [`【${ui('战利品库')}】`, ...selected.map(({ item }) => storyFields({
+          id: item.id, gear: storyEquipmentSpec(item), qty: item.qty,
+        }, publicId))].join('\n');
+        const receipt = await this.loot.send(text);
+        if (context !== this.controller.inventoryContext()) return;
+        if (receipt.status === 'failed') throw Error(receipt.detail ?? '发送失败，可重试');
+        this.lootStatus = receipt.status === 'unknown' ? '投递结果未知，请核对聊天后处理' : '已将所选装备放入聊天';
+        this.lootSelection.clear();
+      } else {
+        if (action === 'inventory-loot-delete' && !selected.length) return;
+        const receipt = action === 'inventory-loot-retention'
+          ? await this.loot.setRetention(Number(floors))
+          : await this.loot.remove(selected.map(entry => entry.item.id));
+        if (context !== this.controller.inventoryContext()) return;
+        if (receipt.status === 'failed') throw Error(receipt.error ?? '保存失败');
+        this.lootStatus = action === 'inventory-loot-retention' ? '已保存暂存层数' : '已删除所选装备';
+        if (action === 'inventory-loot-retention') this.lootRetentionDraft = undefined;
+        else this.lootSelection.clear();
+      }
+    } catch (error) {
+      if (context === this.controller.inventoryContext()) this.lootStatus = error instanceof Error ? error.message : String(error);
+    } finally { this.committing = false; this.draw(); }
+  }
+  private renderLoot(loot: LootVaultAccess): string {
+    const save = this.controller.snapshot(['fallenGear', 'fallenGearFloors', 'narrativeIdState']);
+    const floor = loot.floor();
+    const entries = (save.fallenGear ?? []).filter(entry => entry.expiresAt > floor);
+    const present = new Set(entries.map(entry => entry.item.id));
+    for (const id of this.lootSelection) if (!present.has(id)) this.lootSelection.delete(id);
+    const { publicId } = narrativeIds(save);
+    const busy = this.committing ? 'disabled' : '';
+    const noSelection = this.committing || !this.lootSelection.size ? 'disabled' : '';
+    const floors = this.lootRetentionDraft ?? save.fallenGearFloors ?? FALLEN_GEAR_FLOORS;
+    const rows = entries.map(({ item, expiresAt }) => `<label class="inventory-card inventory-loot-row">
+      <input type="checkbox" data-role="inventory-loot-select" data-item="${esc(item.id)}" ${this.lootSelection.has(item.id) ? 'checked' : ''} ${busy}>
+      <span><strong>${esc(item.name)}</strong> <small class="sub">${esc(publicId(item.id))}</small> <span class="item-quantity">×${item.qty}</span>
+      <small class="sub">${ui('剩余 {count} 层', { count: expiresAt - floor })}</small></span></label>`).join('');
+    return `<section id="inventory-panel"><div class="inventory-title"><h2>${ui('战利品库')}</h2><button data-action="inventory-loot-close" ${busy}>${ui('返回配装')}</button></div>
+      <p class="sub">${ui('用于临时保存阵亡和删除单位物品')}</p>
+      <div class="row"><label>${ui('暂存层数')} <input data-role="inventory-loot-floors" type="number" min="1" step="1" value="${esc(floors)}" ${busy}></label>
+        <button data-action="inventory-loot-retention" ${busy}>${ui('保存')}</button></div>
+      <div class="item-actions"><button data-action="inventory-loot-send" ${noSelection}>${ui('发送所选')}</button>
+        <button class="danger" data-action="inventory-loot-delete" ${noSelection}>${ui('删除所选')}</button></div>
+      <div role="status">${this.lootStatus ? `<p class="sub">${esc(ui(this.lootStatus))}</p>` : ''}</div>
+      ${rows ? `<div class="inventory-list">${rows}</div>` : `<p class="inventory-empty">${ui('暂无暂存装备')}</p>`}</section>`;
+  }
   render(): string {
     const context = this.controller.inventoryContext();
-    if (this.context !== context) { this.context = context; this.draft = undefined; this.preview = undefined; this.error = undefined; this.selectedUnit = undefined; this.bulkDelete = false; this.selectedItems.clear(); }
+    if (this.context !== context) { this.context = context; this.draft = undefined; this.preview = undefined; this.error = undefined; this.selectedUnit = undefined; this.bulkDelete = false; this.selectedItems.clear(); this.lootOpen = false; this.lootSelection.clear(); this.lootRetentionDraft = undefined; this.lootStatus = undefined; }
+    if (this.loot && this.lootOpen) return this.renderLoot(this.loot);
     let save: InventorySave;
     try { save = this.view(); }
     catch (error) { return `<section id="inventory-panel"><h2>${ui("装备与物品")}</h2><p class="grid-reason">${esc(error)}</p></section>`; }
@@ -417,7 +505,7 @@ export class InventoryPanel {
       { name: '随身物品', items: items.filter(item => item.assignedTo && !item.equippedTo) },
       { name: '公共库存', items: items.filter(item => !item.assignedTo) },
     ];
-    return `<section id="inventory-panel"><div class="inventory-title"><h2>${ui("装备与物品")} <small class="sub">${ui('{count}种物品', { count: items.length })}</small></h2><div class="inventory-title-actions">${this.bulkDelete ? `<button data-action="inventory-select-all" ${locked || !eligible.length || this.committing ? 'disabled' : ''}>${ui(allSelected ? '取消全选' : '全选')}</button><button class="danger" data-action="inventory-delete-selected" ${locked || !this.selectedItems.size || this.committing ? 'disabled' : ''}>${ui('删除（{count}）', { count: this.selectedItems.size })}</button><button data-action="inventory-bulk-cancel" ${this.committing ? 'disabled' : ''}>${ui("取消")}</button>` : `<button data-action="inventory-bulk" ${locked || !eligible.length ? 'disabled' : ''}>${ui("批量删除")}</button><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>${ui("技能选择")}</button><button data-action="inventory-new" ${disabled}>${ui("新增物品")}</button>${collectible ? `<button data-action="inventory-collect" data-id="${esc(current!.id)}" ${disabled}>${ui("收缴道具")}</button>` : ''}`}</div></div>
+    return `<section id="inventory-panel"><div class="inventory-title"><div class="inventory-title-heading"><h2>${ui("装备与物品")} <small class="sub">${ui('{count}种物品', { count: items.length })}</small></h2>${this.loot ? `<button data-action="inventory-loot-open">${ui('战利品库')}</button>` : ''}</div><div class="inventory-title-actions">${this.bulkDelete ? `<button data-action="inventory-select-all" ${locked || !eligible.length || this.committing ? 'disabled' : ''}>${ui(allSelected ? '取消全选' : '全选')}</button><button class="danger" data-action="inventory-delete-selected" ${locked || !this.selectedItems.size || this.committing ? 'disabled' : ''}>${ui('删除（{count}）', { count: this.selectedItems.size })}</button><button data-action="inventory-bulk-cancel" ${this.committing ? 'disabled' : ''}>${ui("取消")}</button>` : `<button data-action="inventory-bulk" ${locked || !eligible.length ? 'disabled' : ''}>${ui("批量删除")}</button><button data-action="loadout-skills" data-id="${esc(current?.id ?? '')}" ${!actor || actor.rulesVersion !== 'v2' || current?.retired || current?.status === 'dead' || locked && actor.side !== 'ally' ? 'disabled' : ''}>${ui("技能选择")}</button><button data-action="inventory-new" ${disabled}>${ui("新增物品")}</button>${collectible ? `<button data-action="inventory-collect" data-id="${esc(current!.id)}" ${disabled}>${ui("收缴道具")}</button>` : ''}`}</div></div>
       <div class="inventory-unit-choice"><label>${ui("查看单位")} ${select('unit', this.selectedUnit, [['', ui('无主物品')], ...records.map((r): [string, string] => [r.id, `${r.name} · ${ui(r.side === 'ally' ? '我方' : '敌方')} · ${displayNumber(r.hp)}/${displayNumber(r.base.hpMax)}`])])}</label></div>
       ${current ? `<div class="loadout-current"><h3>${esc(current.name)} ${ui("· 当前装备")}</h3><div class="loadout-slots">${items.filter(i => i.equippedTo).map(i => '<span><small>' + ui(slotNames[i.equippedTo!.slot]) + '</small>' + esc(i.name) + ' ×' + i.qty + '</span>').join('') || `<span>${ui("尚未装备物品")}</span>`}</div>${rideEditor(current.id,platformUnits(records.filter(r => r.snapshot)),locked || this.committing)}<details data-detail-id="loadout-summary"><summary>${ui("查看配装、整体防护与负重")}</summary>${issuedGroups(current)}<p>${esc(gearText(current))}</p></details></div>` : ''}
       ${locked ? `<p class="grid-reason">${ui("战斗中不能更换装备。请在战场的行动列表中使用随身物品。")}</p>` : ''}

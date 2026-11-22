@@ -75,6 +75,12 @@ export function createPanelRuntime(): PanelRuntime {
   };
   return { adapter, controller, resident: true, native: true,
     worldbooks,
+    lootVault: {
+      floor: () => host.context().chat?.length ?? 0,
+      setRetention: floors => convert(service.setLootRetention(floors)),
+      remove: ids => convert(service.deleteLoot(ids)),
+      send: text => messages.send(text, { generate: false }),
+    },
     isEnabled: service.enabled, setEnabled: runtime.setEnabled,
     recentNarrative: () => {
       const count = host.context().chat?.length ?? 0;

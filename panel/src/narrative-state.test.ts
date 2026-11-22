@@ -112,7 +112,7 @@ describe('正文原子事务', () => {
     expect(materializeUnitRecord(next.storage![0]!, reg).weapon?.name).toBe('新步枪');
     expect(next.inventory!.some(item => item.equippedTo?.unitId === 'a' && item.equippedTo.slot === 'primary' && item.id !== oldId)).toBe(true);
   });
-  it('正文按实物id扣减，超量整批回滚且不能重复提交', () => {
+  it('正文按实物id扣减，超量时扣完现有库存且不能重复提交', () => {
     const { save, ns, proposal } = setup('<take id="herb" qty="2" note="交出药草"/>');
     save.inventory = [{ id: 'herb', name: '药草', qty: 3, lootType: 'material' }];
     const next = prepareNarrativeTransaction(save, proposal, ns, true);
@@ -120,7 +120,9 @@ describe('正文原子事务', () => {
     expect(save.inventory[0]!.qty).toBe(3);
     expect(() => prepareNarrativeTransaction(next, proposal, ns, true)).toThrow();
     save.inventory[0]!.qty = 1;
-    expect(() => prepareNarrativeTransaction(save, proposal, ns, true)).toThrow(/数量/);
+    const short = prepareNarrativeTransaction(save, proposal, ns, true);
+    expect(short.inventory!.find(i => i.id === 'herb')!.qty).toBe(0);
+    expect(short.proposals!.at(-1)!.notices?.join()).toContain('已移除 1/2 件');
     expect(save.inventory[0]!.qty).toBe(1);
   });
   it.each([false, true])('同批扣除装备、佩戴、随身及公共库存，精确卸下指定佩戴且整批回滚，逆序=%s', reverse => {
@@ -151,7 +153,8 @@ describe('正文原子事务', () => {
     expect(next.storage![0]!.snapshot!.weapon).toBeUndefined();
     expect(next.storage![0]!.snapshot!.gear!.map(item => item.id)).toEqual(['keep-worn']);
     expect(next.factRevision).toBe(save.factRevision! + 1);
-    expect(() => commit(body + `<take id="${ids.publicId('public')}" qty="3"/>`)).toThrow(/数量/);
+    expect(commit(body + `<take id="${ids.publicId('public')}" qty="3"/>`).inventory!.find(item => item.id === 'public')!.qty).toBe(0);
+    expect(() => commit(body + '<take id="missing-item" qty="3"/>')).toThrow(/物品不存在/);
     expect(save).toEqual(before);
   });
   it('新批出场替换旧名单；不合并旧身份，仍允许原档治疗和合法编队人数', () => {

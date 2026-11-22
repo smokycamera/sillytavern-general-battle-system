@@ -113,6 +113,10 @@ export function prepareReportRestart(save: NarrativeSave, id: string, expectedRe
     encounterContext:structuredClone(context),
     mode:start.kind,smallTarget:'',orderDraft:{},xpSettled:false,selectedReportId:undefined,
     factRevision:expectedRevision+1};
+  if (next.fallenGear) {
+    next.fallenGear = next.fallenGear.filter(entry => entry.battleId !== id);
+    if (!next.fallenGear.length) delete next.fallenGear;
+  }
   next.reports=next.reports!.map(r=>r.id===id?{...r,supersededBy:newId}:r);
   return next;
 }

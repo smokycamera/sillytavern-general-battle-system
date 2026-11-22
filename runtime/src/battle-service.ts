@@ -5,7 +5,7 @@ import type { PersistReceipt, HostSession, MessageTag } from '../../host/src/con
 import { sameSession } from '../../host/src/contracts.js';
 import { NativeHost } from '../../host/src/sillytavern.js';
 import { errorText, NativeStore, type DiscardResult } from './native-store.js';
-import { assertInventoryPanelWrite, deleteUnitArchive, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventoryItem } from '../../panel/src/inventory-state.js';
+import { assertInventoryPanelWrite, deleteFallenGear, deleteUnitArchive, expireFallenGear, setFallenGearFloors, stashBattleFallenGear, prepareInventoryTransaction, type InventoryAction, type InventoryIntent, type InventoryItem } from '../../panel/src/inventory-state.js';
 import { assertTraitSourcePanelWrite, prepareBlessingRevocation } from '../../panel/src/trait-state.js';
 import { prepareBattleItemWrite } from '../../panel/src/battle-items.js';
 import { prepareReportDeletion, prepareReportRestore, prepareReportRestart, stampNewBattleReports } from '../../panel/src/report-history.js';
@@ -221,7 +221,12 @@ export class BattleService {
     for (const event of ['MESSAGE_EDITED', 'MESSAGE_SWIPED']) bind(event, value => { if (this.enabled()) this.unbound('回复被编辑或切换过', messageId(value)); });
     bind('MESSAGE_DELETED', () => { if (!this.enabled()) return; this.binding = undefined; if (this.generation) this.bindingMiss = '生成期间有消息被删除'; void this.reconcileDeletedMessages(); });
     bind('CHAT_CHANGED', () => { void this.load(); });
-    bind('MESSAGE_SENT', () => { if (this.enabled()) this.project(); });
+    bind('MESSAGE_SENT', value => {
+      if (!this.enabled()) return;
+      this.project();
+      const floor = this.host.context().chat?.length ?? 0;
+      if (this.snapshot(['fallenGear']).fallenGear?.some(entry => entry.expiresAt <= floor)) void this.scan(messageId(value));
+    });
     await this.load();
   }
   private project(): void {
@@ -244,7 +249,10 @@ export class BattleService {
       || version.session.scope.key !== this.host.session()?.scope.key || version.generation !== this.store.head()?.generation) return reject('聊天或存档代次已变化');
     if (this.migration && !options.allowReview) return reject('请先核对档案迁移预览');
     const live = this.livePanel(), previousMemory = this.memoryPanel;
-    const prepare = (before: NarrativeSave) => migrateOutOfBattleLoads(compactNarrativeSources(update(prepareNarrativeIds(before))));
+    const prepare = (before: NarrativeSave) => {
+      const current = before.fallenGear?.length ? expireFallenGear(before, this.host.context().chat?.length ?? 0) : before;
+      return migrateOutOfBattleLoads(compactNarrativeSources(update(prepareNarrativeIds(current))));
+    };
     let candidate: NarrativeSave | undefined;
     try { if (options.memoryOnly || live) candidate = structuredClone(prepare(this.snapshot())); }
     catch (error) { return { ...reject(errorText(error)), status: 'failed' }; }
@@ -330,6 +338,9 @@ export class BattleService {
         unitMigrationWarnings: before.unitMigrationWarnings, unitMigrationBackup: before.unitMigrationBackup,
         inventoryOperations: before.inventoryOperations, classMigration: before.classMigration, inventoryMigrationBackup: before.inventoryMigrationBackup, migrationBackups: before.migrationBackups,
         factRevision: (before.factRevision ?? 0) + Number(changed) };
+      prepared.fallenGear = before.fallenGear;
+      prepared.fallenGearFloors = before.fallenGearFloors;
+      stashBattleFallenGear(before, prepared, this.host.context().chat?.length ?? 0);
       return prepared;
     }, { memoryOnly: options.memoryOnly, durable: !options.memoryOnly });
   }
@@ -366,7 +377,15 @@ export class BattleService {
     if (context !== this.inventoryContext()) throw Error('祝福操作属于旧聊天');
     return this.transact(before => { if (expectedRevision !== (before.factRevision ?? 0)) throw Error('档案版本已变化'); return prepareBlessingRevocation(before, unitId, sourceId); });
   }
-  deleteUnit(id: string): Promise<PersistReceipt> { return this.transact(before => deleteUnitArchive(before, id)); }
+  deleteUnit(id: string): Promise<PersistReceipt> {
+    return this.transact(before => deleteUnitArchive(before, id, this.host.context().chat?.length));
+  }
+  setLootRetention(floors: number): Promise<PersistReceipt> {
+    return this.transact(before => setFallenGearFloors(before, floors, this.host.context().chat?.length ?? 0), { durable: true });
+  }
+  deleteLoot(ids: readonly string[]): Promise<PersistReceipt> {
+    return this.transact(before => deleteFallenGear(before, ids), { durable: true });
+  }
   restoreDeployment(id: string): Promise<PersistReceipt> {
     const namespace = this.host.namespace();
     return this.transact(before => { const proposal = before.proposals?.find(p => p.id === id); if (!proposal || namespaceOf(proposal.source) !== namespace) throw Error('请选择当前聊天的同步记录'); return restoreNarrativeDeployment(before, id); });
@@ -489,8 +508,13 @@ export class BattleService {
           index--;
         }
       }
+      const stored = this.snapshot();
+      const before = expireFallenGear(stored, this.host.context().chat?.length ?? 0);
+      const saveExpiry = async () => {
+        if (before !== stored) await this.transact(current => current, { replySave: options.replySave });
+      };
       const message = this.host.message(index); const namespace = this.host.namespace();
-      if (!message || message.role !== 'assistant' || !namespace) return;
+      if (!message || message.role !== 'assistant' || !namespace) { await saveExpiry(); return; }
       const tag = prepareMessageTag(this.host.context().chat!, index);
       if (options.replySave) tag.excerpt = protocolExcerpt(message.text);
       const originalId = message.messageId; message.messageId = tag.id;
@@ -501,17 +525,18 @@ export class BattleService {
       const sameMessage = !changed || sameMessageApartFromText(changed.fingerprint, tag.fingerprint);
       const kept = !changed || !!changed.ids && sameMessage && !!changed.excerpt && changed.excerpt === protocolExcerpt(message.text);
       if (!kept && changed?.ids) miss = sameMessage ? '保存途中回复里的事件被改动' : '保存途中回复被切换或替换';
-      const before = this.snapshot(); let expected = binding && kept && !options.manual ? { ...binding, messageId: (changed?.ids ?? [binding.messageId]).includes(originalId) ? tag.id : binding.messageId } : undefined;
+      let expected = binding && kept && !options.manual ? { ...binding, messageId: (changed?.ids ?? [binding.messageId]).includes(originalId) ? tag.id : binding.messageId } : undefined;
       if (!(expected?.complete && expected.messageId === message.messageId) && message.complete && this.capabilities.messageIdentity) expected = { ...captureGeneration(before, namespace, randomId()), complete: true, manualOnly: !(options.manual && narrativeAutoApproval(before)), messageId: message.messageId };
       const bound = !!binding && expected?.id === binding.id;
       if (expected?.complete && this.capabilities.messageIdentity) message.generationId = expected.id;
-      const proposal = proposalFromMessage(message, expected); if (!proposal) return;
+      const proposal = proposalFromMessage(message, expected);
+      if (!proposal) { await saveExpiry(); return; }
       if (proposal.status === 'pending' && proposal.expected?.manualOnly && !options.manual && narrativeAutoApproval(before)) proposal.reason = autoApproveSkipped(binding && kept ? '没有对上这次生成的开始' : miss);
-      if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) return;
+      if (sourceCommitted(before, proposal.sourceKey) || before.deletedNarrativeReceipts?.includes(narrativeReceiptKey(proposal))) { await saveExpiry(); return; }
       const existing = (before.proposals ?? []).filter(p => sameSource(p.sourceKey, proposal.sourceKey));
       const same = existing.find(p => (p.canonical === proposal.canonical || p.status === 'committed' && parseProtocol(p.source.text).canonical === proposal.canonical) && p.source.swipeId === message.swipeId && (!!proposal.canonical || p.source.text === proposal.source.text));
       const upgrade = shouldRefreshNarrativeProposal(same, proposal, options.manual);
-      if (same && !upgrade) return;
+      if (same && !upgrade) { await saveExpiry(); return; }
       if (upgrade) proposal.id = same!.id;
       if (existing.some(p => p.status === 'committed')) { proposal.status = 'stale'; proposal.reason = '此消息已同步，修改不会重复入账'; }
       const proposals = (before.proposals ?? []).filter(p => !upgrade || p.id !== same!.id).map((p): NarrativeProposal => p.sourceKey === proposal.sourceKey && ['pending', 'legacy', 'failed', 'unresolved'].includes(p.status) ? { ...p, status: 'stale', reason: '已被新消息修订替代' } : p);

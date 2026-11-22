@@ -1,5 +1,5 @@
 import { BODY_LABELS, isVehicleBody } from '../../engine/src/vehicle-size.js';
-import { assignIssue, parseIssue, issueShortage } from './equipment-batches.js';
+import { assignIssue, parseIssue, planEquipmentIssue } from './equipment-batches.js';
 import { parsePlatform, validatePlatform } from '../../engine/src/platforms.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 /** 正文战外绝对赋值。所有修改先在副本校验，装备实物与档案一起提交。 */
@@ -475,12 +475,28 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
     const referenced = typeof input === 'string' ? next.inventory!.find(item => item.id === input) : undefined;
     const singleHeroItem = unit.scale === 'hero' && typeof input === 'string' && !/[×,，、;；]/.test(input)
       && (equipped?.qty ?? 1) === 1;
-    const entries = !referenced && !singleHeroItem && parseIssue(input,slot,data);
-    if (entries && ally && options.stockTransaction) {
-      const shortage = issueShortage(next.inventory!,id,slot,entries,key === 'weapon' && !Object.hasOwn(data,'sidearm'));
-      if (shortage) {
-        options.notices?.push(unit.name+'的配装未改：'+shortage);
+    const fallen = ally ? next.fallenGear?.map(entry => entry.item) : undefined;
+    const singleWanted = singleHeroItem && fallen?.length ? wantedGear(input) : undefined;
+    const matchesFallen = singleWanted?.spec && fallen?.some(item => item.name === singleWanted.name && sameGear(item.mechanics, singleWanted.spec));
+    const entries = !referenced && (!singleHeroItem || matchesFallen) && parseIssue(input,slot,data);
+    let strictIssue = ally && options.stockTransaction;
+    if (entries && ally && (strictIssue || fallen?.length)) {
+      const { shortage, claimed } = planEquipmentIssue(next.inventory!, id, slot, entries, key === 'weapon' && !Object.hasOwn(data,'sidearm'), fallen);
+      strictIssue ||= claimed.size > 0;
+      if (strictIssue && shortage) {
+        options.notices?.push(unit.name + '的配装未改：' + shortage);
         continue;
+      }
+      for (const [item, qty] of claimed) {
+        const recovered = qty === item.qty ? { ...item } : splitInventoryBatch(item, `fallen:${sourceId}:${id}:${slot}:${item.id}`, qty);
+        recovered.assignedTo = id;
+        next.inventory!.push(recovered);
+        item.qty -= qty;
+        options.notices?.push(`${unit.name}从暂存装备领取「${item.name}」×${qty}`);
+      }
+      if (claimed.size) {
+        next.fallenGear = next.fallenGear!.filter(entry => entry.item.qty > 0);
+        if (!next.fallenGear.length) delete next.fallenGear;
       }
     }
     // A canonical weapon list covers the former secondary slot as well. Old two-field edits keep their original targets.
@@ -488,7 +504,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
       for (const item of next.inventory!) if (item.equippedTo?.unitId === id && item.equippedTo.slot === 'sidearm') delete item.equippedTo;
     }
     if (entries) {
-      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId,true,unit.body,!(ally && options.stockTransaction));
+      assignIssue(next.inventory!,id,unit.side,slot,entries,sourceId,true,unit.body,!strictIssue);
       continue;
     }
     if (Object.hasOwn(data,key)) {

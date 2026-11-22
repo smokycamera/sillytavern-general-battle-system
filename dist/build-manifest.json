@@ -1,8 +1,8 @@
 {
   "format": "tavern-battle-native-build",
   "version": "3.0.26",
-  "builtAt": "2026-11-22T02:06:16.091Z",
-  "sourceFingerprint": "9e65b3e2cf3e783940fbcc2e0051a9c6cbf474426108241c250af8b9bd7711a8",
+  "builtAt": "2026-11-22T06:43:28.016Z",
+  "sourceFingerprint": "687ae593755d244dbebd5903f20f10d6843fd0d8a45c6aed97967bb66d9bd4d7",
   "baselineSha256": "05b8534c9f65725f38a000c04d25c8e6b9224505fd57ad9969fed39a075c0f57",
   "files": [
     {
@@ -31,9 +31,9 @@
       "sha256": "65e88062099b9074c529334de7ae70a72263bfea62899abb828fbe21e955783d"
     },
     {
-      "path": "dist/assets/panel-CZXElArA.js",
-      "bytes": 1557064,
-      "sha256": "0b4d8da5b563376ac070a52248dda7b3532a19ebffff56b1821a1c2c3f782b67"
+      "path": "dist/assets/panel-BhTW-B-B.js",
+      "bytes": 1562379,
+      "sha256": "0e312507fece4293d06a15a69feab05925e6d2af033b188050babe4dfced6771"
     },
     {
       "path": "dist/assets/panel-D_ApSqUn.css",
@@ -61,9 +61,9 @@
       "sha256": "61496bb789f6b15a980c6417c74beb0d925a5b8d9a42fa334515d3d898586164"
     },
     {
-      "path": "dist/assets/worldbooks-5nrHq9Qz.js",
-      "bytes": 1505374,
-      "sha256": "e8309bc7f26f3c5bba86d6d0f6a24ffa5d039adb2f12fdd73687ab62da436dc4"
+      "path": "dist/assets/worldbooks-Do04t_dv.js",
+      "bytes": 1510038,
+      "sha256": "2a2ad1a432a59252d19db9b7d7d3e644f25bb5660e1ab126134a8c210b5ca835"
     },
     {
       "path": "docs/README.md",
@@ -592,8 +592,8 @@
     },
     {
       "path": "dist/index.js",
-      "bytes": 106833,
-      "sha256": "ddb2392274af6b10129dc5df4080d1a3748bb3d0198bee1af8fa5948d10d5c4c"
+      "bytes": 107552,
+      "sha256": "7be5c9fc1f11c17f7de0a2b357db455b570915b344d92ae7468d3579613fb08a"
     },
     {
       "path": "licenses/Vite-LICENSE.md",
@@ -657,8 +657,8 @@
     },
     {
       "path": "dist/panel/index.html",
-      "bytes": 49267,
-      "sha256": "5c7a24417f8296537d28081bfc0dbd776c541b7084622ccc707eac43a11e3629"
+      "bytes": 49665,
+      "sha256": "1df92938f468624c23d52e403e20fb65bd3cddeb1510a1baecaabbe938398002"
     },
     {
       "path": "scripts/jev-cors-relay.mjs",

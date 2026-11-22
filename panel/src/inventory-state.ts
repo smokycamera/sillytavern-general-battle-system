@@ -42,9 +42,70 @@ export interface InventorySave {
   schemaVersion?: number; storage?: UnitRecord[]; rosterIds?: string[]; inventory?: InventoryItem[]; factRevision?: number;
   narrativeIdState?: NarrativeIdState;
   inventoryOperations?: { id: string; fingerprint: string }[];
+  fallenGear?: FallenGear[];
+  fallenGearFloors?: number;
   battle?: { kind: 'small' | 'mass'; snap: Record<string, unknown> } | null;
   committedOutcomeIds?: string[];
   [key: string]: unknown;
+}
+
+export const FALLEN_GEAR_FLOORS = 6;
+interface FallenGear {
+  expiresAt: number;
+  storedAt?: number;
+  battleId?: string;
+  item: InventoryItem;
+}
+
+export function expireFallenGear<T extends InventorySave>(save: T, floor: number): T {
+  if (!save.fallenGear?.some(entry => entry.expiresAt <= floor)) return save;
+  const remaining = save.fallenGear.filter(entry => entry.expiresAt > floor);
+  return { ...save, fallenGear: remaining.length ? remaining : undefined };
+}
+
+export function setFallenGearFloors<T extends InventorySave>(save: T, floors: number, floor: number): T {
+  if (!Number.isSafeInteger(floors) || floors < 1 || !Number.isSafeInteger(floors + floor)) throw Error('暂存层数须为正整数');
+  const current = expireFallenGear(save, floor);
+  const fallenGear = current.fallenGear?.map(entry => {
+    const storedAt = entry.storedAt ?? entry.expiresAt - FALLEN_GEAR_FLOORS;
+    return { ...entry, storedAt, expiresAt: storedAt + floors };
+  });
+  return expireFallenGear({ ...current, fallenGear, fallenGearFloors: floors }, floor);
+}
+
+export function deleteFallenGear<T extends InventorySave>(save: T, ids: readonly string[]): T {
+  const selected = new Set(ids);
+  const remaining = save.fallenGear?.filter(entry => !selected.has(entry.item.id));
+  return { ...save, fallenGear: remaining?.length ? remaining : undefined };
+}
+
+function rememberFallenGear(next: InventorySave, previous: InventoryItem[], fallen: ReadonlySet<string>, floor: number,
+  battleId?: string, broken = new Set<string>()): void {
+  const kept = new Set(next.inventory?.filter(item => item.qty > 0).map(item => item.id));
+  const saved = new Set(next.fallenGear?.map(entry => entry.item.id));
+  const additions: FallenGear[] = [];
+  for (const item of previous) {
+    if (item.qty <= 0 || !item.equippedTo || !fallen.has(item.equippedTo.unitId) || kept.has(item.id) || saved.has(item.id) || broken.has(item.id)
+      || !item.mechanics || item.mechanics.kind === 'item' || item.mechanics.kind === 'weapon' && item.mechanics.value.recipe?.mechanism === 'natural') continue;
+    const { equippedTo, assignedTo, publicIssueId, history, ...equipment } = item;
+    additions.push({ storedAt: floor, expiresAt: floor + (next.fallenGearFloors ?? FALLEN_GEAR_FLOORS), battleId, item: structuredClone(equipment) });
+    saved.add(item.id);
+  }
+  if (additions.length) next.fallenGear = [...next.fallenGear ?? [], ...additions];
+}
+
+/** Reconcile hidden loot from the same finalized battle whose inventory write was validated. */
+export function stashBattleFallenGear(before: InventorySave, next: InventorySave, floor: number): void {
+  const battle = next.battle;
+  if (!battle || !Array.isArray(battle.snap.combatants)) return;
+  const battleId = `${battle.kind}:${String(battle.snap.seed)}`;
+  if (before.committedOutcomeIds?.includes(battleId) || !next.committedOutcomeIds?.includes(battleId)) return;
+  const combatants = battle.snap.combatants as Combatant[];
+  const participants = new Set(combatants.map(u => u.transportOrigin ?? u.id));
+  const fallen = new Set(next.storage?.filter(r => participants.has(r.id) && r.status === 'dead' && !r.recoverableWounded).map(r => r.id));
+  if (!fallen.size) return;
+  const broken = new Set(combatants.filter(u => isArmsV2(u.armsModel) && u.shield && u.shieldDurability?.remaining === 0).map(u => u.shield!.id));
+  rememberFallenGear(next, before.inventory ?? [], fallen, floor, battleId, broken);
 }
 
 export type InventoryAction =
@@ -153,13 +214,35 @@ const stackable = (spec: ItemSpecification) => spec.kind === 'item' && spec.form
 export const isInventoryStack = (item: InventoryItem): boolean => !!item.batch || !item.mechanics || item.mechanics.kind === 'item' && item.mechanics.value.recipe.form === 'single';
 
 const batchSignature = (item: InventoryItem) => fingerprint([item.name, item.lootType, item.mechanics && {...item.mechanics,value:{...item.mechanics.value,id:undefined}}]);
-/** 正文仍可用原叠编号扣除分给各人的份额；只追踪该叠的拆分后代，不按同名合并。 */
-export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: string, qty: number): { itemId: string; qty: number }[] {
+/** Keep the normal inventory order, then use hidden copies of the same lot for any deficit. */
+export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: string, qty: number,
+  fallenGear: readonly FallenGear[] = []): { itemId: string; qty: number; hidden?: true }[] {
+  if (!Number.isSafeInteger(qty) || qty < 1) throw Error('物品不存在或移除数量无效');
   const source = inventory.find(item => item.id === itemId);
-  if (!source || !Number.isSafeInteger(qty) || qty < 1) throw Error('物品不存在或移除数量无效');
+  if (source && source.qty >= qty) return [{ itemId, qty }];
+  // An ID sent from the loot vault identifies that specific hidden holding.
+  const cached = !source?.qty && fallenGear.find(entry => entry.item.id === itemId)?.item;
+  if (cached) return [{ itemId, qty: Math.min(qty, cached.qty), hidden: true }];
+  if (!source) throw Error('物品不存在或移除数量无效');
   const byId = new Map(inventory.map(item => [item.id, item]));
+  const hidden = fallenGear.map(entry => entry.item).filter(item => !byId.has(item.id));
+  for (const item of hidden) byId.set(item.id, item);
+  const hiddenIds = new Set(hidden.map(item => item.id));
+  const signature = batchSignature(source);
+  const compatible = (item: InventoryItem) => isInventoryStack(source) && isInventoryStack(item) && batchSignature(item) === signature;
+  const lot = (item: InventoryItem): string => {
+    const visited = new Set<string>();
+    while (item.sourceItemId && !visited.has(item.id)) {
+      visited.add(item.id);
+      const parent = byId.get(item.sourceItemId);
+      if (!parent) return item.sourceItemId;
+      item = parent;
+    }
+    return item.id;
+  };
+  const sourceLot = hidden.length ? lot(source) : undefined;
   const sameStack = (item: InventoryItem): boolean => {
-    if (!isInventoryStack(source) || !isInventoryStack(item) || batchSignature(source) !== batchSignature(item)) return false;
+    if (!compatible(item)) return false;
     const visited = new Set<string>();
     let current: InventoryItem | undefined = item;
     while (current && !visited.has(current.id)) {
@@ -169,16 +252,17 @@ export function narrativeTakeParts(inventory: readonly InventoryItem[], itemId: 
     }
     return false;
   };
-  const candidates = [source, ...inventory.filter(item => item.id !== source.id && sameStack(item))];
-  const parts: { itemId: string; qty: number }[] = [];
+  const candidates = [source, ...inventory.filter(item => item.id !== source.id && sameStack(item)),
+    ...hidden.filter(item => compatible(item) && lot(item) === sourceLot)];
+  const parts: { itemId: string; qty: number; hidden?: true }[] = [];
   let remaining = qty;
   for (const item of candidates) {
     const taken = Math.min(remaining, item.qty);
-    if (taken > 0) parts.push({ itemId: item.id, qty: taken });
+    if (taken > 0) parts.push({ itemId: item.id, qty: taken, ...(hiddenIds.has(item.id) ? { hidden: true } : {}) });
     remaining -= taken;
     if (!remaining) return parts;
   }
-  throw Error('物品不存在或移除数量超出库存');
+  return parts;
 }
 export function createInventoryItem(id: string, name: string, spec: ItemSpecification, seed: string, qty = 1): InventoryItem {
   if (!id || !name.trim()) throw new Error('物品缺少身份或名称');
@@ -687,9 +771,10 @@ export function calibrateSavedWeaponRanges(save: InventorySave): void {
   }
 }
 
-/** 删除当前档案、名单引用及该单位已装备实物；未装备携行物品解除归属，历史战报保留。 */
-export function deleteUnitArchive(save: InventorySave, unitId: string): InventorySave {
-  requireOutOfBattle(save); recordById(save, unitId);
+/** Remove the unit and roster references, with short-term retention of its equipped gear in native chats. */
+export function deleteUnitArchive(save: InventorySave, unitId: string, floor?: number): InventorySave {
+  requireOutOfBattle(save);
+  recordById(save, unitId);
   const next = prepareInventoryState(save);
   next.storage = next.storage!.filter((r) => r.id !== unitId);
   for (const record of next.storage) if (record.snapshot?.ride?.platformId === unitId) {
@@ -697,7 +782,11 @@ export function deleteUnitArchive(save: InventorySave, unitId: string): Inventor
     rewriteRecord(next,record,'remove-platform:'+unitId);
   }
   next.rosterIds = (next.rosterIds ?? []).filter((id) => id !== unitId);
-  next.inventory = next.inventory!.filter((item) => item.equippedTo?.unitId !== unitId && !(item.assignedTo===unitId && item.mechanics?.kind==='weapon' && item.mechanics.value.recipe?.mechanism==='natural'));
+  const items = next.inventory!;
+  next.inventory = items.filter((item) => item.equippedTo?.unitId !== unitId && !(item.assignedTo===unitId && item.mechanics?.kind==='weapon' && item.mechanics.value.recipe?.mechanism==='natural'));
+  if (floor !== undefined) {
+    rememberFallenGear(next, items, new Set([unitId]), floor);
+  }
   for (const item of next.inventory ?? []) {
     if (item.assignedTo === unitId) delete item.assignedTo;
   }

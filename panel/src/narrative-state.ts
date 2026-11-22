@@ -13,7 +13,7 @@ import { deployUnitRecord, materializeUnitRecord, unitRecordFromCombatant, updat
 import { parseProtocol, protocolExcerpt } from './protocol.js';
 import type { Suggestion } from './tags.js';
 import { migrateSavedSuggestion } from './saved-suggestion.js';
-import { consolidateReforgedEquipment, createInventoryItem, isInventoryStack, narrativeTakeParts, prepareInventoryState, prepareInventoryTransaction, type InventoryItem } from './inventory-state.js';
+import { consolidateReforgedEquipment, createInventoryItem, isInventoryStack, narrativeTakeParts, prepareInventoryState, prepareInventoryTransaction, type InventoryItem, type InventorySave } from './inventory-state.js';
 import { assertNarrativeCapacity, hasNarrativeDeployment } from './narrative-limits.js';
 import { applyUnitSet, UNIT_EQUIPMENT_FIELDS, unitSetReferencesGear, type UnitSetContext } from './unit-set.js';
 import { grantStoryEffects } from './story-effects.js';
@@ -86,6 +86,8 @@ export interface NarrativeSave {
   inventory?: InventoryItem[];
   narrativeIdState?: NarrativeIdState;
   inventoryOperations?: { id: string; fingerprint: string }[];
+  fallenGear?: InventorySave['fallenGear'];
+  fallenGearFloors?: number;
   battle?: { kind: 'small' | 'mass'; snap: Record<string, unknown> } | null;
   committedOutcomeIds?: string[];
   [key: string]: unknown;
@@ -399,14 +401,26 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
   // 新入库排在单位字段之前：unit_set 换上的若正是同一回复 add 的那件，直接取用而不另造一件。
   // 版本只对批次开始前的事实校验；后续任一步失败只丢弃此候选副本。
   const givenStacks = new Set(proposal.events.flatMap(event => event.kind === 'give' && preparedSave.inventory?.some(item => item.id === event.id && isInventoryStack(item)) ? [event.id] : []));
+  const notices: string[] = [];
   const take = (event: Extract<Suggestion, { kind: 'take' }>, index: number) => {
     next = prepareInventoryState(next);
-    const parts = narrativeTakeParts(next.inventory ?? [], event.id, event.qty);
-    for (const [partIndex, part] of parts.entries()) {
-      const item = next.inventory!.find(item => item.id === part.itemId)!;
+    const parts = narrativeTakeParts(next.inventory ?? [], event.id, event.qty, next.fallenGear);
+    const taken = parts.reduce((total, part) => total + part.qty, 0);
+    if (taken < event.qty) notices.push(`库存不足：${ids.publicId(event.id)} 已移除 ${taken}/${event.qty} 件`);
+    for (const [partIndex, { itemId, qty, hidden }] of parts.entries()) {
+      if (hidden) {
+        const cached = next.fallenGear!.find(entry => entry.item.id === itemId)!;
+        cached.item.qty -= qty;
+        continue;
+      }
+      const item = next.inventory!.find(item => item.id === itemId)!;
       const operation = proposal.id + ':' + index + (partIndex ? ':part:' + partIndex : '');
       if (item.equippedTo && !item.batch) next = prepareInventoryTransaction(next, { kind: 'unequip', id: 'take-unequip:' + operation, expectedRevision: next.factRevision ?? 0, ...item.equippedTo, itemId: item.id });
-      next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + operation, expectedRevision: next.factRevision ?? 0, ...part });
+      next = prepareInventoryTransaction(next, { kind: 'discard', id: 'take:' + operation, expectedRevision: next.factRevision ?? 0, itemId, qty });
+    }
+    if (parts.some(part => part.hidden)) {
+      next.fallenGear = next.fallenGear!.filter(entry => entry.item.qty > 0);
+      if (!next.fallenGear.length) delete next.fallenGear;
     }
   };
   for (const [index, event] of proposal.events.entries()) {
@@ -417,7 +431,7 @@ export function prepareNarrativeTransaction(save: NarrativeSave, proposal: Narra
     next = prepareInventoryTransaction(next, { kind: 'add', id: `add:${proposal.id}:${index}`, expectedRevision: next.factRevision ?? 0, itemId: event.id, qty: event.qty });
   }
   // given：换装可取用的同一回复实物；handed：同一回复 add 的全部实物，unit_set 的 items 先从这里交出。
-  const given = new Set<string>(), handed = new Set<string>(), notices: string[] = [];
+  const given = new Set<string>(), handed = new Set<string>();
   const deferredEquipment = new Map<string, Record<string, unknown>>();
   const incomingEquipment = new Map<string, InventoryItem[]>();
   for (const event of proposal.events) if (event.kind === 'give') {

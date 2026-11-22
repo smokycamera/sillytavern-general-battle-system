@@ -45,8 +45,16 @@ export interface WorldbookEditorUpdate {
   custom?: { id: string; patch?: Partial<Omit<CustomWorldbookEntry, 'id'>>; delete?: boolean };
 }
 
+export interface LootVaultAccess {
+  floor(): number;
+  setRetention(floors: number): Promise<SaveReceipt>;
+  remove(ids: readonly string[]): Promise<SaveReceipt>;
+  send(text: string): Promise<DeliveryReceipt>;
+}
+
 export interface PanelRuntime {
   worldbooks?: WorldbookSource;
+  lootVault?: LootVaultAccess;
   recentNarrative?: () => import('../../vendor/jev-core/src/types.js').NarrativeMessage[];
   adapter: TavernAdapter;
   controller: PanelController;

@@ -369,6 +369,47 @@ try {
   check('撤销后重扫只得到新回复的人工候选',await page.evaluate(()=>{const s=__tavernBattleNative.service;return !s.store.hasPending()&&s.snapshot().proposals.length===1&&!s.snapshot().storage?.length;}));
   await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(artifacts,'mobile.png')});
   check('390px窗口不横向溢出',await page.evaluate(()=>document.getElementById('tavern-battle-native-panel').getBoundingClientRect().width<=390));
+  await page.evaluate(()=>switchChat('loot')); await ready();
+  const gear = await page.evaluate(async () => {
+    const service = __tavernBattleNative.service;
+    context.chat.push({is_user:false,mes:'<tb><spawn name="暂存测试单位" side="ally" scale="hero" weapon="暂存剑:剑L2" armor="暂存锁甲:中甲L2"/></tb>',swipe_id:0,gen_finished:'complete'});
+    await context.saveChat();
+    await service.scan();
+    await service.approve(service.snapshot().proposals[0].id);
+    await service.deleteUnit(service.snapshot().storage[0].id);
+    return service.snapshot().fallenGear.map(entry => entry.item.name);
+  });
+  check('删除单位后装备进入暂存', gear.includes('暂存剑') && gear.includes('暂存锁甲'));
+  await frame.locator('.workspace-nav [data-tab="inventory"]').click();
+  const lootEntry = frame.locator('.inventory-title-heading [data-action="inventory-loot-open"]');
+  check('手机宽度下战利品库入口在配装标题旁', await lootEntry.evaluate(el => {
+    const button = el.getBoundingClientRect(), title = el.previousElementSibling.getBoundingClientRect();
+    return button.left >= title.right && button.right <= el.ownerDocument.documentElement.clientWidth;
+  }));
+  await lootEntry.click();
+  await frame.getByText('用于临时保存阵亡和删除单位物品', { exact:true }).waitFor();
+  await frame.locator('[data-role="inventory-loot-floors"]').fill('9');
+  await frame.locator('[data-action="inventory-loot-retention"]').click(); await idle(frame);
+  await frame.getByText('已保存暂存层数', { exact:true }).waitFor();
+  const lootRow = name => frame.locator('.inventory-loot-row').filter({hasText:name});
+  check('暂存层数更新到当前暂存装备', (await lootRow('暂存剑').textContent()).includes('剩余 9 层'));
+  await languageButton.click();
+  await frame.getByRole('heading', {name:'Loot Vault', exact:true}).waitFor();
+  await lootRow('暂存剑').getByRole('checkbox').check();
+  await frame.getByRole('button', {name:'Send Selected', exact:true}).click(); await idle(frame);
+  await frame.getByText('Selected gear added to chat.', {exact:true}).waitFor();
+  check('发送只插入所选装备且不自动生成', await page.evaluate(() => {
+    const message = context.chat.at(-1);
+    return message.is_user && message.mes.includes('【Loot Vault】') && message.mes.includes('暂存剑') && !message.mes.includes('暂存锁甲') && __generations === 0;
+  }));
+  await lootRow('暂存锁甲').getByRole('checkbox').check();
+  await frame.getByRole('button', {name:'Delete Selected', exact:true}).click(); await idle(frame);
+  await frame.getByText('Selected gear deleted.', {exact:true}).waitFor();
+  const lootSave = await state();
+  check('删除仅移除所选，层数和剩余战利品保存到当前聊天',
+    lootSave.fallenGearFloors === 9 && lootSave.fallenGear.some(entry => entry.item.name === '暂存剑') &&
+    !lootSave.fallenGear.some(entry => entry.item.name === '暂存锁甲') && !lootSave.inventory.some(item => gear.includes(item.name) && item.qty > 0));
+  await languageButton.click();
   await page.evaluate(()=>__tavernBattleNative.close());
   const mobileEntry = page.locator('#tavern-battle-native-entry');
   const mobileBox = await mobileEntry.boundingBox();

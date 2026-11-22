@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateUnit, traitRegistry } from '../../engine/src/index.js';
 import { unitRecordFromCombatant } from './unit-state.js';
-import { createInventoryItem, prepareInventoryState, type InventoryItem } from './inventory-state.js';
+import { createInventoryItem, deleteUnitArchive, FALLEN_GEAR_FLOORS, prepareInventoryState, setFallenGearFloors, splitInventoryBatch, stashBattleFallenGear, type InventoryItem } from './inventory-state.js';
 import { narrativeIds } from './narrative-ids.js';
 import { nativeFixture } from '../../runtime/tests/native-fixture.js';
 import { captureGeneration, namespaceOf, prepareNarrativeTransaction, proposalFromMessage, type MessageEnvelope, type NarrativeSave } from './narrative-state.js';
@@ -21,6 +21,110 @@ function transact(save: NarrativeSave, body: string, messageId = 'reply') {
 const named = (save: NarrativeSave, name: string) => save.inventory!.filter(i => i.name === name && i.qty > 0);
 const weaponOf = (save: NarrativeSave) => save.inventory!.find(i => i.equippedTo?.unitId === 'a' && i.equippedTo.slot === 'primary')!;
 const notices = (save: NarrativeSave) => save.proposals!.at(-1)!.notices?.join('；') ?? '';
+
+it('keeps fallen gear outside the public inventory, issues only the requested copies, and expires the remainder on ordinary dialogue', async () => {
+  const f = nativeFixture();
+  try {
+    await f.service.start();
+    const armor = createInventoryItem('fallen-armor', '旧锁甲', {kind:'armor',tier:2,power:2,profile:'thermal'}, 'fallen-roll', 3);
+    const original = structuredClone(armor.mechanics!.value);
+    const dead = generateUnit({name:'Fallen',side:'enemy',scale:'company',hpMax:3,rulesVersion:'v2',level:2,traits:[]}, {
+      seed:'fallen',registry:reg,
+    }).unit;
+    dead.id = 'fallen';
+    dead.hp = 0;
+    dead.status = 'dead';
+    dead.armor = armor.mechanics!.value as typeof dead.armor;
+    const save = setup();
+    save.schemaVersion = 2;
+    save.storage!.push(unitRecordFromCombatant(dead));
+    save.inventory!.push({...armor,assignedTo:dead.id,equippedTo:{unitId:dead.id,slot:'armor'}});
+    expect((await f.service.transact(() => save)).status).toBe('confirmed');
+    expect((await f.service.deleteUnit(dead.id)).status).toBe('confirmed');
+    await f.service.load();
+    const hidden = f.service.snapshot();
+    expect(named(hidden, armor.name)).toHaveLength(0);
+    expect(hidden.fallenGear?.find(entry => entry.item.id === armor.id)).toMatchObject({expiresAt:FALLEN_GEAR_FLOORS,item:{qty:3}});
+
+    f.context.chat!.push({mes:'<tb><add item="口粮"/><unit_set id="u1" armor="旧锁甲:中甲L2×1"/></tb>',is_user:false,swipe_id:0,gen_finished:'finished'});
+    await f.service.scan(undefined, {manual:true});
+    const after = f.service.snapshot();
+    const issued = named(after, armor.name);
+    expect(issued).toHaveLength(1);
+    expect(issued[0]).toMatchObject({qty:1,equippedTo:{unitId:'a',slot:'armor'}});
+    expect(issued[0]!.mechanics!.value).toEqual(JSON.parse(JSON.stringify({...original,id:issued[0]!.id})));
+    expect(after.fallenGear?.find(entry => entry.item.id === armor.id)?.item.qty).toBe(2);
+
+    for (let i = 1; i < FALLEN_GEAR_FLOORS; i++) {
+      f.context.chat!.push({mes:'Daybreak.',is_user:false,swipe_id:0,gen_finished:'finished'});
+    }
+    await f.service.scan();
+    await f.service.load();
+    expect(f.service.snapshot().fallenGear).toBeUndefined();
+    expect(named(f.service.snapshot(), armor.name).map(item => item.qty)).toEqual([1]);
+  } finally { f.service.dispose(); }
+});
+
+it('stashes only actual removed gear of a fallen participant once per battle outcome', () => {
+  const armor = createInventoryItem('fallen-armor', '旧锁甲', {kind:'armor',tier:2,power:2}, 'fallen-roll');
+  const before = {inventory:[{...armor,assignedTo:'a',equippedTo:{unitId:'a',slot:'armor' as const}}]};
+  const next: NarrativeSave = {
+    ...setup(), inventory:[], battle:{kind:'small',snap:{seed:'fallen',combatants:[{id:'a'}]}},
+    committedOutcomeIds:['small:fallen'],
+  };
+  next.storage![0]!.status = 'dead';
+  stashBattleFallenGear(before, next, 4);
+  stashBattleFallenGear(before, next, 5);
+  expect(next.fallenGear).toMatchObject([{battleId:'small:fallen',expiresAt:4+FALLEN_GEAR_FLOORS,item:{id:armor.id,mechanics:armor.mechanics}}]);
+  expect(next.fallenGear![0]!.item.equippedTo).toBeUndefined();
+  expect(next.inventory).toEqual([]);
+});
+
+it('takes only what exists across equipped and hidden copies of the same lot', () => {
+  const armor = createInventoryItem('armor-root', '旧锁甲', {kind:'armor',tier:2,power:2}, 'original', 25);
+  const living = splitInventoryBatch(armor, 'armor-equipped', 20);
+  const removed = splitInventoryBatch(armor, 'armor-deleted', 5);
+  const unrelated = createInventoryItem('armor-unrelated', '旧锁甲', {kind:'armor',tier:2,power:2}, 'original', 5);
+  const units = [living, removed, unrelated].map((item, i) => {
+    const unit = generateUnit({name:'Group ' + i,side:'ally',scale:'company',hpMax:item.qty,rulesVersion:'v2',level:2,traits:[]}, {
+      seed:'take:' + i,registry:reg,
+    }).unit;
+    unit.id = 'group-' + i;
+    unit.armor = item.mechanics!.value as typeof unit.armor;
+    item.assignedTo = unit.id;
+    item.equippedTo = {unitId:unit.id,slot:'armor'};
+    return unitRecordFromCombatant(unit);
+  });
+  let save: NarrativeSave = prepareInventoryState({schemaVersion:2,storage:units,inventory:[living,removed,unrelated]});
+  save = deleteUnitArchive(deleteUnitArchive(save, 'group-1', 0), 'group-2', 0);
+  const before = structuredClone(save);
+  const id = narrativeIds(save).publicId(living.id);
+  const take = (qty: number) => transact(save, `<take id="${id}" qty="${qty}"/>`);
+  const some = take(10);
+  expect(named(some, armor.name).map(item => item.qty)).toEqual([10]);
+  expect(some.fallenGear).toEqual(before.fallenGear);
+  for (const qty of [25, 26]) {
+    const all = take(qty);
+    expect(named(all, armor.name)).toHaveLength(0);
+    expect(all.fallenGear).toEqual(before.fallenGear?.filter(entry => entry.item.id !== removed.id));
+    if (qty === 26) expect(notices(all)).toContain('已移除 25/26 件');
+  }
+  const cachedId = narrativeIds(save).publicId(removed.id);
+  const selected = transact(save, `<take id="${cachedId}" qty="6"/>`);
+  expect(named(selected, armor.name).map(item => item.qty)).toEqual([20]);
+  expect(selected.fallenGear).toEqual(before.fallenGear?.filter(entry => entry.item.id !== removed.id));
+  expect(notices(selected)).toContain('已移除 5/6 件');
+  expect(save).toEqual(before);
+});
+
+it('adjusts old vault entries from their original floor without reviving expired gear', () => {
+  const item = createInventoryItem('stored', '旧锁甲', {kind:'armor',tier:2,power:2}, 'original');
+  const save = { fallenGear: [{ item, expiresAt: 9 }, { item: {...item,id:'expired'}, expiresAt: 4 }] };
+  const extended = setFallenGearFloors(save, 10, 6);
+  expect(extended).toEqual({fallenGearFloors:10,fallenGear:[{item,storedAt:3,expiresAt:13}]});
+  expect(setFallenGearFloors(extended, 3, 6).fallenGear).toBeUndefined();
+  expect(save.fallenGear).toHaveLength(2);
+});
 
 describe('unit_set 换装与库存同一件实物', () => {
   it.each(['equipped', 'bag', 'public'] as const)('重铸改名并换回原实物，保留奥术与冻结种子、不复制当前武器：%s', location => {
