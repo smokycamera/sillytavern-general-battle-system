@@ -2907,6 +2907,7 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
   if (playerDiplomacy() && act !== 'diplomacy-reply') throw Error('请先答复投降或撤军提议');
   clearBattleQueries();
   const actionBattle = currentBattle();
+  const platformProgress = act === 'small-platform' && actionBattle instanceof SmallBattle ? battleProgress(actionBattle) : undefined;
   const identity = adapter.identity(), namespace = adapter.namespace(), context = controller.inventoryContext(), workerEpoch = battleWorkerEpoch;
   const valid = () => identity === adapter.identity() && namespace === adapter.namespace() && context === controller.inventoryContext()
     && workerEpoch === battleWorkerEpoch && (!actionBattle || currentBattle() === actionBattle);
@@ -2916,7 +2917,8 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
     if (!valid()) return;
     if (state.small) prefetchCommandIntents(state.small);
     if (battleSaveFailed) { const receipt = state.saveReceipt; restore(); state.saveReceipt = receipt; render(); return; }
-    if (state.small?.battlefield && (['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
+    const platformEndedTurn = platformProgress !== undefined && state.small && platformProgress !== battleProgress(state.small);
+    if (state.small?.battlefield && (platformEndedTurn || ['grid-endturn', 'grid-mobile-endturn', 'grid-auto', 'small-start', 'mass-start'].includes(act)
       || smallActorBlocked(state.small))) {
       // 先保存动作及反应结果，再跳过失能行动者并执行后续自动回合。
       const active = state.small.active;
@@ -2926,7 +2928,7 @@ async function executePanelAction(act: string, task: () => void | Promise<void>)
       }
       tacticalView.selectedId = state.small.active?.id; tacticalView.targetId = undefined; tacticalView.cell = undefined;
     }
-    if (!state.small?.battlefield && ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-batch-attack', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act)) {
+    if (!state.small?.battlefield && (platformEndedTurn || ['small-start', 'mass-start', 'small-attack', 'small-sidearm', 'small-batch-attack', 'small-charge', 'small-move', 'small-retreat', 'small-auto-act', 'small-endturn', 'ability-confirm'].includes(act))) {
       if (!(await persist())) return;
       (await runAuto());
     }
