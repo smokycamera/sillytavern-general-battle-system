@@ -411,7 +411,7 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(restored(transact(dying,{xp:20},'','down-xp').next()).status).toBe('dying');
     expect(save.storage![0]!.hp).toBe(60);
   });
-  it('level 可整体设置单位修正，同级改修正保留经验，单改等级保留修正', () => {
+  it('level 整组替换本体修正，只填等级清空，同级保留经验', () => {
     const initial = transact(setup(), { level: 1, xp: 90, xpProgress: 30, bonuses: { speed: 2 } }).next();
     const changed = transactText(initial, '<unit_set id="u1" level="1+4防御"/>', 'defense').next();
     const unit = restored(changed);
@@ -419,14 +419,30 @@ describe('正文战外全字段事务（定向验证）',()=>{
     expect(unit.bonuses).toEqual({ defense: 4 });
     expect(xpProgress(unit)?.current).toBe(30);
 
+    const sameLevel = restored(transactText(changed, '<unit_set id="u1" level="1"/>', 'clear-defense').next());
+    expect(sameLevel.bonuses).toBeUndefined();
+    expect(xpProgress(sameLevel)?.current).toBe(30);
     const promoted = restored(transactText(changed, '<unit_set id="u1" level="2"/>', 'promote').next());
-    expect(promoted).toMatchObject({ level: 2, xp: 90, bonuses: { defense: 4 } });
+    expect(promoted).toMatchObject({ level: 2, xp: 90 });
+    expect(promoted.bonuses).toBeUndefined();
     expect(xpProgress(promoted)?.current).toBe(0);
 
     const attrs = { id: 'u1', level: 'Ｌ３＋４防御－２生命' };
     const parseWith = (bonuses: Record<string, number>) => parseProtocol(serializeEvent('unit_set', { ...attrs, data: JSON.stringify({ bonuses }) }));
     expect(parseWith({ health: -2, defense: 4 }).events[0]).toMatchObject({ data: { level: 3, bonuses: { defense: 4, health: -2 } } });
     expect(parseWith({ health: -2 }).errors.join()).toContain('data.bonuses冲突');
+  });
+  it('清除 u15 的训练防御修正，与指定经验和学习齐射同批执行', () => {
+    const save = transact(setup('company'), { level: 1, xp: 120, xpProgress: 70, bonuses: { defense: -1 } }).next();
+    save.narrativeIdState!.aliases.u1 = 'u15';
+    const learn = '<learn id="u15" skills="齐射:物理范围L1+射击"/>';
+    const xpOnly = restored(transactText(save, '<tb><unit_set id="u15" xpProgress="95"/>' + learn + '</tb>', 'xp-only').next());
+    expect(xpOnly.bonuses).toEqual({ defense: -1 });
+    const unit = restored(transactText(save, '<tb><unit_set id="u15" level="1" xpProgress="95"/>' + learn + '</tb>', 'clear-and-learn').next());
+    expect(unit).toMatchObject({ level: 1, xp: 120, hp: 50, abilities: [expect.objectContaining({ name: '齐射', power: 1 })] });
+    expect(unit.bonuses).toBeUndefined();
+    expect(xpProgress(unit)?.current).toBe(95);
+    expect(unit.armor).toEqual(xpOnly.armor);
   });
   it('装备库存与当前规则数值一致，旧耐久覆盖仅保留记录，定制技能入场后不被公式重建',()=>{
     const save=setup(),oldWeapon=save.storage![0]!.snapshot!.weapon!.id;

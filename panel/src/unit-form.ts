@@ -3,7 +3,7 @@ import { isVehicleBody } from '../../engine/src/vehicle-size.js';
 import { displayNumber } from '../../engine/src/display-number.js';
 import { MAX_PREPARED_SKILLS } from '../../engine/src/skill-catalog.js';
 import { equipmentLoadLabel } from '../../engine/src/body.js';
-import { enhancementLabel } from '../../engine/src/enhancements.js';
+import { BONUS_NAMES, ENHANCEMENT_STATS, enhancementLabel, type Enhancements } from '../../engine/src/enhancements.js';
 import { gridAbility } from '../../engine/src/small/skill-range.js';
 import { singleLifeLimit } from '../../engine/src/health-limits.js';
 import { memberDurability } from '../../engine/src/combat-model.js';
@@ -18,10 +18,21 @@ import { WEAPON_CLASSES, ABILITY_BLUEPRINTS, traitCatalog, isGradedTrait, type T
 import { armorChoices, bodyChoices, equipmentFields, captureEquipment, selectField, htmlText as esc } from './equipment-form.js';
 import type { UnitDraft } from './unit-builder.js';
 import { battleReason } from './battle-display.js';
+const modifierLabel = (bonuses?: Enhancements) => enhancementLabel(bonuses, ui).trim();
+
 export function captureUnitDraft(prefix: string, d: UnitDraft, opts: { managed?: boolean } = {}): UnitDraft {
   const root = document.querySelector(`[data-builder-form="${prefix}"]`); if (!root) return d;
   const next = structuredClone(d);
   for (const key of ['name', 'side', 'scale', 'level', 'body', 'speedTier', 'platformSpec', 'seats', 'hp', 'hpMax', 'memberHp', 'note', 'reserves'] as const) { const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.value; }
+  for (const stat of ENHANCEMENT_STATS.unit) {
+    const field = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-bonus-${stat}"]`);
+    if (!field) continue;
+    const points = Number(field.value);
+    if (points === (d.bonuses?.[stat] ?? 0)) continue;
+    next.bonuses ??= {};
+    if (points === 0) delete next.bonuses[stat];
+    else next.bonuses[stat] = points;
+  }
   for (const key of ['mount', 'autoPrepare'] as const) { const el = root.querySelector<HTMLInputElement>(`[data-role="${prefix}-${key}"]`); if (el) next[key] = el.checked; }
   // Managed gear is a frozen inventory projection, not an editable recipe. Even
   // untouched controls lose absent/zero bonuses and unsupported legacy values.
@@ -68,6 +79,10 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
     <label>${ui("单位类型")}${select('scale', [['hero', '个体'], ['company', '编队']], opts.editing)}</label><label>${ui(isVehicleBody(d.body) ? d.platformSpec ? '车组训练' : '平台等级' : '训练')}${input('level', 'type="number" min="1" max="10" ' + (opts.editing ? 'readonly title="随经验成长"' : ''))}</label>
     ${d.scale === 'company' || opts.editing ? `<label>${ui(d.scale === 'company' ? '编制上限' : '生命上限')}${input('hpMax', 'type="number" min="1" placeholder="50"' + (d.scale === 'hero' ? ' max="' + singleLifeLimit(d.damageModel) + '"' : ''))}</label>` : ''}
     ${opts.editing ? `<label>${ui(d.scale === 'company' ? '当前人数' : '当前生命')}${input('hp', 'type="number" min="0"')}</label>` : ''}</div>
+    <details class="builder-section" data-detail-id="${prefix}-bonuses"><summary>${ui('本体修正')} <span>${esc(modifierLabel(d.bonuses) || ui('无'))}</span></summary>
+      <p class="sub">${ui('填写 0 可清除该项修正。')}</p>
+      <div class="builder-basics">${ENHANCEMENT_STATS.unit.map(stat => `<label>${esc(ui(BONUS_NAMES[stat]))}<input type="number" min="-10" max="10" step="1" data-role="${prefix}-bonus-${stat}" value="${esc(d.bonuses?.[stat] ?? 0)}"></label>`).join('')}</div>
+    </details>
     <div class="builder-recommendation"><span>${ui("当前方案")}</span><b>${esc(d.primaryEnabled === false ? ui('无主武器') : d.primary.name || ui(WEAPON_CLASSES[d.primary.mechanism]?.name || '主武器'))} · ${ui(armorChoices[Number(d.armor.tier)]?.[1] ?? '护甲')}${d.mount ? ' · 骑乘' : ''}${d.shield ? ' · 携盾' : ''}</b><small>${opts.editing ? '修改后先预览，未改动的记录保持原样。' : '默认无甲、L1主武器；需要装备或特殊能力时再展开调整。'}</small></div>
     <details class="builder-section" data-detail-id="${prefix}-body"><summary>${ui("身体与装备")} <span>${ui("调整配装")}</span></summary><p class="sub">${ui("基础速度决定移动格数；负载、地形、状态和疲劳影响实际机动。")}${d.numericModel || d.loadModel ? '容量随等级和身体变化，负载不超过容量80%时无负担；超过后连续影响移动与先攻。' : '人形容量14，负重达到12时移动−1、先攻−2；大型容量18。'}${isVehicleBody(d.body) && !d.platformSpec ? '平台等级综合表示载具与乘员水平，影响生命、作战能力和承载。' : ''}</p>
       <div class="builder-basics"><label>${ui("身体")}${select('body', bodyChoices)}</label><label>${ui("坐骑／载具规格")}${input('platformSpec','placeholder="例如 封闭载具L5+4防御"')}</label><label>${ui("每匹／辆座位")}${input('seats','type="number" min="1" placeholder="1"')}</label><label>${ui("基础速度")}${select('speedTier', [['', '随身体'], ['1', '1 · 迟缓'], ['2', '2 · 缓行'], ['3', '3 · 标准'], ['4', '4 · 快速'], ['5', '5 · 疾速']])}</label><label class="check-field"><input type="checkbox" data-role="${prefix}-mount" ${d.mount ? 'checked' : ''}>${ui("骑乘")}</label></div>
@@ -99,7 +114,9 @@ export function unitForm(prefix: string, d: UnitDraft, registry: Map<string, Tra
 export function buildPreview(unit: Combatant, before?: Combatant): string {
   const change = (value: string, old?: string) => old && value !== old ? esc(old) + ' → ' + esc(value) : esc(value);
   const gear = (u: Combatant) => [u.weapon?.name ?? ui('主手空置'), u.sidearm && ui('副武器{name}', { name: u.sidearm.name }), u.armor?.name ?? ui('无甲'), u.shield && ui('携盾')].filter(Boolean).join(' · ');
+  const modifiers = modifierLabel(unit.bonuses), oldModifiers = before ? modifierLabel(before.bonuses) : undefined;
   return `<div class="builder-preview" data-role="builder-preview"><h3>${ui(before ? '确认档案变化' : '确认加入队伍')}</h3><b>${esc(unit.name)}</b><p>${change(`${displayNumber(unit.hp)}/${displayNumber(unit.base.hpMax)}`, before && `${displayNumber(before.hp)}/${displayNumber(before.base.hpMax)}`)} ${ui(unit.scale === 'hero' ? '生命' : '人数')} · ${ui('{label}{level}', { label: ui(isVehicleBody(unit.body) ? '平台等级' : '训练'), level: unit.level })}${unit.scale !== 'hero' ? ui(' · 成员耐久 {value}', { value: displayNumber(memberDurability(unit)) }) : ''}</p><p>${change(gear(unit), before && gear(before))}</p>
+    ${modifiers || oldModifiers ? `<p>${ui('本体修正')} ${change(modifiers || ui('无'), before && (oldModifiers || ui('无')))}</p>` : ''}
     ${hasMemberHealth(unit)?`<p>${ui("总生命")} ${displayNumber(memberHealth(unit))}/${displayNumber(memberHealthMax(unit))} · ${esc(memberHealthSummary(unit, 6, ui))}</p>`:''}
     <p>${esc(anchoredWeaponLabel(unit.weapon,unit.damageModel,unit.artilleryModel,unit.sprayerDamageMultiplier,unit.sprayerGroupDamageMultiplier,ui))}</p><p>${esc(equipmentLoadLabel(unit, ui))} · ${ui('防护 动能{kinetic} / 热能{thermal} / 奥术{arcane}', { kinetic: displayNumber(anchoredProtection(unit, 'kinetic')), thermal: displayNumber(anchoredProtection(unit, 'thermal')), arcane: displayNumber(anchoredProtection(unit, 'arcane')) })}${armorEffectLabel(unit) ? ' · ' + esc(armorEffectLabel(unit, ui)) : ''}</p>
     ${equipmentTraitIds(unit).length ? `<p data-role="equipment-traits">${ui("装备自动特质：")}${equipmentTraitIds(unit).map(id => esc(ui(autoTraitLabel(id, unit)))).join(ui('、'))}${ui('，无需另行勾选。')}</p>` : ''}

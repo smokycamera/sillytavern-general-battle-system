@@ -540,6 +540,8 @@
   "留空采用类型名称": "Leave blank to use the type name",
   "规格": "Tier",
   "属性修正（每项−10至+10）": "Stat Modifiers (−10 to +10 each)",
+  "本体修正": "Intrinsic Modifiers",
+  "填写 0 可清除该项修正。": "Enter 0 to clear a modifier.",
   "如+3伤害-2精度；留空清除": "E.g. +3伤害-2精度. Leave blank to clear.",
   "盾类型": "Shield Type",
   "挂背（主武器双手）：双手武器只能配小盾或能量盾": "Back-mounted (two-handed weapon): compatible with small or energy shields.",

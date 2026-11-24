@@ -1,4 +1,5 @@
 import { parsePlatform, platformText, validatePlatform } from '../../engine/src/platforms.js';
+import { validateEnhancements, type Enhancements } from '../../engine/src/enhancements.js';
 import { rebaseUnitStats } from './unit-set.js';
 import { prepareTraitLevelModel } from '../../engine/src/trait-level-model.js';
 import { V11_OVERFLOW_D20, V12_OVERFLOW_D20, V23_OVERFLOW_D20, V33_OVERFLOW_D20, V34_OVERFLOW_D20, V36_OVERFLOW_D20 } from '../../engine/src/rules.js';
@@ -20,6 +21,7 @@ import { generateUnit, compileItem, equipmentReason, validateMount, learnAbiliti
 import { equipmentDraft, equipmentSpecification, type EquipmentDraft } from './equipment-form.js';
 import { editUnitRecord, unitRecordFromCombatant, type UnitRecord } from './unit-state.js';
 export interface UnitDraft {
+  bonuses?: Enhancements;
   damageModel?: Combatant['damageModel'];
   numericModel?: Combatant['numericModel'];
   loadModel?: Combatant['loadModel'];
@@ -37,6 +39,7 @@ export function unitDraftFromRecord(r: UnitRecord): UnitDraft {
   const u = r.snapshot!, body = u.body ?? 'human';
   const levels = Object.fromEntries(u.traits.filter(isGradedTrait).map(id => [id, u.traitLevels?.[id] ?? 5]));
   return { ...newUnitDraft(), damageModel: u.damageModel, numericModel: u.numericModel, loadModel: u.loadModel, name: r.name, side: r.side, scale: r.scale, level: String(r.level), body, speedTier: u.speedTier === undefined ? '' : String(u.speedTier), mount: !!u.mount, platformSpec: u.platform ? platformText(u.platform) : '', seats: u.seats?.toString() ?? '', hp: String(r.hp), hpMax: String(r.base.hpMax),memberHp:String(u.formation?.memberHp??nominalLife(u)), note: r.note ?? '', reserves: String(u.resources.reserve ?? 0),
+    ...(u.bonuses && { bonuses: { ...u.bonuses } }),
     primary: equipmentDraft('weapon', body, u.weapon ? { kind: 'weapon', value: u.weapon } : undefined, u.weapon?.name),
     sidearm: equipmentDraft('weapon', body, u.sidearm ? { kind: 'weapon', value: u.sidearm } : undefined, u.sidearm?.name),
     armor: equipmentDraft('armor', body, u.armor ? { kind: 'armor', value: u.armor } : undefined, u.armor?.name),
@@ -50,7 +53,9 @@ function integer(s: string, min: number, max: number, label: string): number {
 function identityInput(d: UnitDraft): GenerateInput {
   if (!d.name.trim()) throw Error('请填写单位名称');
   if (!['ally', 'enemy', 'neutral'].includes(d.side) || !['hero', 'company'].includes(d.scale)) throw Error('单位归属或人数形式无效');
+  validateEnhancements(d.bonuses, 'unit');
   return { name: d.name.trim(), side: d.side as Combatant['side'], scale: d.scale as 'hero' | 'company', level: integer(d.level, 1, 10, '训练'), rulesVersion: 'v2', damageModel: d.damageModel, numericModel: d.numericModel, loadModel: d.loadModel, traits: [...d.traits], body: d.body as GenerateInput['body'], mount: d.mount, speedTier: d.speedTier ? integer(d.speedTier, 1, 5, '速度档位') : undefined,
+    bonuses: d.bonuses && Object.keys(d.bonuses).length ? { ...d.bonuses } : undefined,
     platform: d.platformSpec?.trim() ? parsePlatform(d.platformSpec.trim()) : undefined,
     seats: d.seats?.trim() ? integer(d.seats,1,Number.MAX_SAFE_INTEGER,'座位数') : undefined,
     traitLevels: d.traitLevels,
@@ -108,15 +113,34 @@ export function editUnitBuild(previous: UnitRecord, d: UnitDraft, registry: Map<
   unit.traits = parsedTraits.traits;
   unit.traitLevels = Object.fromEntries(Object.entries(input.traitLevels ?? parsedTraits.traitLevels ?? {}).filter(([id, level]) => unit.traits.includes(id) && level !== 5));
   if (!Object.keys(unit.traitLevels).length) delete unit.traitLevels;
-  if (oldDraft.platformSpec !== (d.platformSpec ?? '')) {
-    rebaseUnitStats(unit,{platform:input.platform ?? null, body:input.body});
+  const platformChanged = oldDraft.platformSpec !== (d.platformSpec ?? '');
+  const bonusesChanged = JSON.stringify(d.bonuses) !== JSON.stringify(oldDraft.bonuses);
+  if (platformChanged || bonusesChanged) {
+    const xpValue = unit.xpValue;
+    rebaseUnitStats(unit, {
+      ...(platformChanged && { platform: input.platform ?? null, body: input.body }),
+      ...(bonusesChanged && { bonuses: input.bonuses ?? null }),
+    });
+    if (!platformChanged) unit.xpValue = xpValue;
+  }
+  if (bonusesChanged) {
+    unit.bonuses = input.bonuses;
+    if (d.hpMax !== oldDraft.hpMax && input.hpMax !== undefined) unit.base.hpMax = input.hpMax;
+    unit.hp = Math.min(unit.hp, unit.base.hpMax);
+    if (unit.base.moraleMax !== undefined) {
+      unit.base.moraleMax = Math.max(0, unit.base.moraleMax);
+      if (unit.morale !== undefined) unit.morale = Math.min(unit.morale, unit.base.moraleMax);
+    }
+    if (unit.genAudit) unit.genAudit.input.bonuses = unit.bonuses;
   }
   unit.platform = input.platform; unit.seats = input.seats;
   unit.body = input.body; unit.mount = input.mount; unit.speedTier = input.speedTier; validateMount(unit); validatePlatform(unit);
   prepareCombatModel(unit,unit.damageModel==='wounds-v2'?V6_D20:V5_D20);
   prepareArmorWearModel(unit,d.numericModel ? V33_OVERFLOW_D20 : {});
   prepareRegenerationModel(unit,d.numericModel ? V33_OVERFLOW_D20 : {});
-  if(unit.formation&&(d.memberHp??'').trim())setMemberMaximum(unit,integer(d.memberHp!,1,Number.MAX_SAFE_INTEGER,'成员最大生命'));
+  if (unit.formation && d.memberHp?.trim() && (!bonusesChanged || d.memberHp !== oldDraft.memberHp)) {
+    setMemberMaximum(unit, integer(d.memberHp, 1, Number.MAX_SAFE_INTEGER, '成员最大生命'));
+  }
   unit.abilityState = structuredClone(previous.snapshot.abilityState); unit.resources = { ...previous.snapshot.resources, reserve: input.reserves ?? 0 };
   if (!previous.equipmentManaged) setGear(unit, d, oldDraft);
   else { const reason = equipmentReason(unit); if (reason) throw Error(reason); }

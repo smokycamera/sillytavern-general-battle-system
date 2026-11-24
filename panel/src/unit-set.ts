@@ -349,6 +349,8 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   unit.damageModel??='wounds-v1';
   const oldProgress = xpProgress(unit)?.current ?? 0;
   const data = structuredClone(patch);
+  // Setting training replaces the whole intrinsic modifier set. A bare level clears it.
+  if (data.level !== undefined && data.bonuses === undefined) data.bonuses = null;
   // 专精可带等级（林地专精L8、forest-loreL8）：列表只留 id，等级写进 traitLevels。unit_set 是绝对赋值，没写等级的专精回到 L5。
   if (Array.isArray(data.traits) && data.traitLevels === undefined) {
     const levels: Record<string, number> = {};
@@ -387,6 +389,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   rebaseUnitStats(unit,data);
   const fields = Object.fromEntries(direct.filter(key => Object.hasOwn(data,key)).map(key => [key,data[key]]));
   unit = merge(unit as unknown as ObjectData, fields) as unknown as Combatant;
+  if (Object.hasOwn(data, 'bonuses') && unit.genAudit) unit.genAudit.input.bonuses = unit.bonuses;
   if (data.clear !== undefined) clearUnitEffects(unit, data.clear, sourceId);
   if(data.hp===undefined)unit.hp=Math.min(unit.hp,unit.base.hpMax);
   if(data.morale===undefined&&unit.base.moraleMax!==undefined)unit.morale=Math.min(unit.morale??unit.base.moraleMax,unit.base.moraleMax);
@@ -403,8 +406,7 @@ export function applyUnitSet(save: NarrativeSave, id: string, patch: ObjectData,
   validatePlatform(unit);
   validateEnhancements(unit.bonuses,'unit');
   for (const key of ['xp','xpValue'] as const) if (unit[key] !== undefined) number(unit[key],key,0);
-  // 同级设置本体修正保留进度；单独指定等级仍沿用显式重置的语义。
-  const resetProgress = data.level !== undefined && (data.level !== previous.level || data.bonuses === undefined);
+  const resetProgress = data.level !== undefined && data.level !== previous.level;
   if (data.xp !== undefined || data.xpProgress !== undefined || resetProgress) {
     const progress = data.xpProgress ?? (resetProgress ? 0 : Math.max(0,oldProgress + Number(data.xp ?? unit.xp ?? 0) - Number(previous.xp ?? 0)));
     number(progress,'xpProgress',0);

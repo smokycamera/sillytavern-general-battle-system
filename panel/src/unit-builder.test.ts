@@ -39,3 +39,17 @@ it('旧曲射炮在编辑表单中明确显示曲射，改等级后保留投送�
   const upgraded = editUnitBuild(record, edit, registry);
   expect(upgraded.snapshot!.weapon).toMatchObject({ indirect: true, recipe: { mechanism: 'indirect-cannon', power: 6, bonuses: { damage: 10, accuracy: 10, penetration: 10 } } });
 });
+it('recalculates member durability when clearing an intrinsic health modifier, keeping the current health ledger', () => {
+  const draft = newUnitDraft();
+  draft.name = '试验编队'; draft.scale = 'company'; draft.hpMax = '20'; draft.hp = '17'; draft.bonuses = { health: -2 };
+  const unit = buildUnit(draft, registry, 'unit-health-modifiers');
+  const previous = unitRecordFromCombatant(unit), edit = unitDraftFromRecord(previous);
+  edit.bonuses = {};
+  const updated = editUnitBuild(previous, edit, registry).snapshot!;
+  expect(updated.bonuses).toBeUndefined();
+  expect(updated.formation!.memberHp).toBeGreaterThan(unit.formation!.memberHp);
+  expect(updated.formation!.health).toEqual(unit.formation!.health);
+  expect([updated.hp, updated.base.hpMax]).toEqual([17, 20]);
+  edit.memberHp = '10';
+  expect(editUnitBuild(previous, edit, registry).snapshot!.formation!.memberHp).toBe(10);
+});
